@@ -1,85 +1,154 @@
 # Simple Chat
 
-LINE 風の簡易チャットアプリです。ユーザー名だけで入室し、グループ（ルーム）に参加してリアルタイムでメッセージや画像をやり取りできます。
+LINE 風のグループチャットアプリです。ユーザー名だけで入室し、ルームに参加して、テキストや画像をリアルタイムにやり取りできます。
 
-<!-- スクリーンショット / 動作動画へのリンクをここに追加 -->
+- フロントエンド：Next.js（App Router）／ バックエンド：FastAPI ／ DB：SQLite
+- 送信は REST API、新着の配信は WebSocket
+
+<!-- スクリーンショット・動作動画をここに -->
+
+---
+
+## 目次
+
+1. [機能](#機能)
+2. [クイックスタート](#クイックスタート)
+3. [アーキテクチャ](#アーキテクチャ)
+4. [ディレクトリ構成](#ディレクトリ構成)
+5. [API](#api)
+6. [DB 設計](#db-設計)
+7. [設計上の判断](#設計上の判断)
+8. [開発](#開発)
+9. [制約と今後の拡張](#制約と今後の拡張)
+
+---
 
 ## 機能
 
-| 画面 | 機能 |
+| 画面 | できること |
 |---|---|
-| ログイン (`/`) | ユーザー名で入室（未登録の名前は自動登録）。ログイン状態はブラウザに保持 |
-| トーク一覧 (`/rooms`) | 参加中のトーク（**最新メッセージ・未読数**付き、新しい順）、参加できるルーム（参加ボタン）、ルーム作成、**ルーム名検索** |
-| チャットルーム (`/rooms/:id`) | メッセージ送信フォーム（テキスト・**画像**）、メッセージ一覧、**送信取り消し**、**トーク名の変更**、**退会** |
+| **ログイン**（`/`） | ユーザー名で入室。初めての名前なら自動で登録される |
+| **トーク一覧**（`/rooms`） | 参加中のトーク（最新メッセージ・時刻・**未読数**、新しい順）／ 参加できるルーム（参加ボタン）／ ルーム作成 ／ **ルーム名検索** |
+| **チャット**（`/rooms/:id`） | テキスト・**画像**の送信 ／ メッセージ一覧 ／ **送信取り消し** ／ **トーク名の変更** ／ **退会** |
 
-- **グループチャット**：誰でもルームを作成でき、作成者は自動で参加。他のユーザーは一覧から自由に参加・退会できる（公開グループ）。参加・退会するとトーク内に「〇〇が参加しました」「〇〇が退会しました」と表示され、ヘッダーの人数も即座に更新される
-- **未読数**：トーク一覧に未読件数をバッジ表示。ルームを開いている間は自動で既読になる（自分の投稿・取り消し済みは数えない）
-- **最新メッセージ**：トーク一覧に「送信者: 本文」「〇〇が画像を送信しました」のプレビューと時刻を表示
-- **送信取り消し**：自分のメッセージのみ。LINE と同様に「メッセージの送信を取り消しました」と表示され、相手の画面からも即座に消える
-- **トーク名の変更**：ヘッダーの ✎ からその場で編集（Enter で保存 / Esc で取り消し）。参加者なら誰でも変更でき、他の参加者の画面・トーク一覧にも即座に反映される。トーク内には LINE と同様に「〇〇がトーク名を「△△」に変更しました」と表示される（未読には数えない・取り消し不可）
-- **ルーム名検索**：部分一致・大文字小文字を区別しない。入力が止まってから 0.3 秒後にサーバーへ問い合わせ、参加中／参加できるルームの両方を絞り込む
-- **画像送信**：JPEG / PNG / GIF / WebP、5MB まで。クリックで原寸表示
-- 自分のメッセージは右側に緑、他人は左側に白＋名前・アイコン（LINE 風）、時刻と日付区切りを表示
-- Enter で送信 / Shift+Enter で改行。**日本語入力の変換確定 Enter では送信しない**
-- WebSocket によるリアルタイム配信（新着・取り消し・未読数）。切断時は自動再接続し、切断中のメッセージも補完
-- 過去メッセージはカーソル型ページングで「過去のメッセージを読み込む」から取得
+**チャットの振る舞い**
+- 自分の発言は右に緑、他人の発言は左に白で名前とアイコン付き。時刻と日付の区切りも表示
+- Enter で送信、Shift+Enter で改行。**日本語入力の変換確定の Enter では送信しない**
+- 参加・退会・トーク名変更は、トーク内に「〇〇が参加しました」などのお知らせとして表示
+- 取り消したメッセージは「〇〇がメッセージの送信を取り消しました」と表示（本人のみ取り消せる）
+- 画面を開いている間は自動で既読。未読数は自分の投稿・お知らせ・取り消し済みを数えない
+- 上にスクロールして「過去のメッセージを読み込む」で過去ログを表示
+- 接続が切れても自動で再接続し、切れている間のメッセージも補完
 
-## 技術スタック
+**ルームの仕様**：誰でも作成でき、作成者は自動で参加。他の人は一覧から自由に参加・退会できる（公開グループ）。参加者だけがメッセージを読み書き・受信できる。
 
-| 領域 | 技術 |
-|---|---|
-| フロントエンド | Next.js 16 (App Router) / React 19 / TypeScript / Tailwind CSS 4 |
-| バックエンド | FastAPI / SQLAlchemy 2 / Pydantic 2 / Uvicorn |
-| データベース | SQLite |
-| ツール | uv（Python パッケージ管理）、pytest、Ruff、ESLint |
+---
 
-## セットアップ
+## クイックスタート
 
-### 必要なもの
-- Python 3.13+ と [uv](https://docs.astral.sh/uv/)（`pip install uv` でも可）
-- Node.js 20+
-
-### 1. バックエンド
+必要なもの：Python 3.13 以上と [uv](https://docs.astral.sh/uv/)（`pip install uv` でも可）、Node.js 20 以上
 
 ```bash
+# 1. バックエンド（http://localhost:8000）
 cd backend
 uv sync
-uv run uvicorn app.main:app --reload --port 8000
-```
+uv run uvicorn app.main:app --reload
 
-- 初回起動時に `backend/chat.db` が作成されます（ルームは空の状態から始まるので、画面から作成してください）
-- アップロード画像は `backend/uploads/` に保存されます
-- API ドキュメント（Swagger UI）: http://localhost:8000/docs （http://localhost:8000/ からも転送されます）
-- 古いバージョンで作成した `chat.db` は、追加できる列なら起動時に自動で移行します。移行できない古さの場合はエラーで停止するので、`chat.db` を削除して再起動してください
-
-### 2. フロントエンド（別ターミナル）
-
-```bash
+# 2. フロントエンド（http://localhost:3000）※別のターミナルで
 cd frontend
 npm install
 npm run dev
 ```
 
-http://localhost:3000 を開きます。動作確認は、別ブラウザ（またはシークレットウィンドウ）で別のユーザー名でログインし、同じルームに入るとリアルタイムで反映される様子が確認できます。
+> Windows で `uv` コマンドが見つからない場合は、`python -m uv sync` のように `python -m uv` で実行できます。
 
-### 環境変数（任意）
+http://localhost:3000 を開いてユーザー名を入力します。
+**2 人でのやり取りを試すには**、通常のウィンドウとシークレットウィンドウで別の名前でログインし、片方がルームを作成、もう片方が「参加」すると、送信・未読数・お知らせがリアルタイムに反映される様子を確認できます。
 
-| 変数 | 既定値 | 説明 |
-|---|---|---|
-| `DATABASE_URL` (backend) | `sqlite:///./chat.db` | DB の接続先 |
-| `CORS_ORIGINS` (backend) | `http://localhost:3000,http://127.0.0.1:3000` | 許可するオリジン（カンマ区切り） |
-| `UPLOAD_DIR` (backend) | `./uploads` | 画像の保存先 |
-| `MAX_IMAGE_BYTES` (backend) | `5242880` | 画像の最大サイズ（バイト） |
-| `NEXT_PUBLIC_API_BASE_URL` (frontend) | `http://localhost:8000` | バックエンドの URL |
+- API の一覧と試し打ち：http://localhost:8000/docs
+- 初回起動時に `backend/chat.db`（DB）と `backend/uploads/`（画像）が作られます
 
-それぞれ `backend/.env.example`、`frontend/.env.example` をコピーして `.env` / `.env.local` を作成すると上書きできます。
+---
 
-### テスト・Lint
+## アーキテクチャ
 
-```bash
-cd backend && uv run pytest && uv run ruff check .
-cd frontend && npm run lint && npm run format:check && npm run build
+### 全体像
+
+```mermaid
+flowchart LR
+    subgraph Browser["ブラウザ（Next.js）"]
+        UI["画面<br/>features/*"]
+        RT["RealtimeProvider<br/>WebSocket 1 本"]
+    end
+    subgraph Server["FastAPI"]
+        API["REST API<br/>api/routes"]
+        WS["/ws<br/>api/routes/websocket"]
+        SVC["業務ロジック<br/>services"]
+        PUB["配信<br/>realtime"]
+    end
+    DB[("SQLite")]
+    FS[("uploads/<br/>画像")]
+
+    UI -- "送信・取得・操作（REST）" --> API
+    API --> SVC --> DB
+    SVC --> FS
+    API -- "結果を参加者へ" --> PUB
+    PUB -- "イベント" --> WS
+    WS -- "message.created など" --> RT --> UI
 ```
+
+- **送信や操作はすべて REST**、**サーバーからの通知は WebSocket** と役割を分けています。
+- WebSocket は **ユーザーごとに 1 本** だけ張り、サーバーは「そのルームの参加者全員」にイベントを送ります。トーク一覧（未読数）とチャット画面が同じ接続を共有します。
+
+### メッセージ送信の流れ
+
+```mermaid
+sequenceDiagram
+    participant A as 花子のブラウザ
+    participant API as FastAPI
+    participant DB as SQLite
+    participant B as 太郎のブラウザ
+
+    A->>API: POST /api/rooms/1/messages {"content":"こんにちは"}
+    API->>DB: 参加者か確認 → 保存
+    API-->>A: 201 作成したメッセージ（すぐ画面に表示）
+    API--)A: WebSocket: message.created
+    API--)B: WebSocket: message.created
+    Note over A: 同じ id は重複表示しない
+    Note over B: 一覧に追加・トーク一覧の未読数を更新
+    B->>API: PUT /api/rooms/1/read（画面を開いていれば既読）
+```
+
+### バックエンドの層と依存の向き
+
+```mermaid
+flowchart TB
+    routes["api/routes<br/>HTTP・WebSocket の入口<br/>（入力チェック・レスポンス）"]
+    realtime["realtime<br/>参加者への配信"]
+    services["services<br/>業務ロジック<br/>（権限・トランザクション）"]
+    storage["storage<br/>画像ファイル"]
+    models["models / schemas<br/>テーブル定義・入出力の形"]
+    core["core<br/>設定・DB 接続・例外・起動時の準備"]
+
+    routes --> services
+    routes --> realtime
+    realtime --> services
+    services --> storage
+    services --> models
+    routes -.-> core
+    services -.-> core
+```
+
+- 依存は **上から下への一方向** です。`services` は HTTP も WebSocket も知らず、失敗は `core/errors.py` の例外（`NotFoundError` など）を投げるだけです。HTTP ステータスへの変換は `main.py` で一括して行います。
+- 権限チェック（ルームの存在確認・参加者か）は `services/room_access.py` の 1 か所に集めています。
+
+### フロントエンドの構成
+
+- `app/` はルーティングだけを持ち、各ページは `features/` の画面コンポーネントを置くだけです。
+- `features/` は機能ごとのフォルダです：`auth`（ログイン・ログイン必須の制御）、`realtime`（WebSocket）、`rooms`（トーク一覧）、`chat`（チャット画面）。
+- 画面をまたいで使うものは `components/`（ボタン・ヘッダーなど）、`hooks/`、`lib/`（API クライアント・型・表示用の関数）に置いています。
+
+---
 
 ## ディレクトリ構成
 
@@ -87,85 +156,126 @@ cd frontend && npm run lint && npm run format:check && npm run build
 .
 ├── backend/
 │   ├── app/
-│   │   ├── main.py        # アプリ生成、CORS、例外ハンドラ、起動時の DB 初期化
-│   │   ├── config.py      # 環境変数による設定
-│   │   ├── db.py          # エンジン・セッション
-│   │   ├── models.py      # テーブル定義
-│   │   ├── schemas.py     # API の入出力スキーマ（バリデーション）
-│   │   ├── errors.py      # ドメイン例外（→ HTTP ステータスへ変換）
-│   │   ├── deps.py        # 認証などの依存関数
-│   │   ├── realtime.py    # WebSocket 接続管理・ユーザー単位の配信
-│   │   ├── events.py      # ルーム参加者へのイベント配信（組み立てと送信予約）
-│   │   ├── storage.py     # 画像の検証・保存・削除
-│   │   ├── migrations.py  # 起動時のスキーマ準備（列の自動追加・不一致の検出）
-│   │   ├── services/      # ビジネスロジック（auth / rooms / memberships / messages）
-│   │   └── routers/       # エンドポイント定義
-│   └── tests/             # API・WebSocket・権限・未読数・画像のテスト
+│   │   ├── main.py              アプリの組み立て（ルーター登録・CORS・例外→HTTP 変換・起動時の DB 準備）
+│   │   ├── core/                設定（config）・DB 接続（database）・ドメイン例外（errors）・起動時のスキーマ準備（migrations）
+│   │   ├── models/              テーブル定義（user / room / message）
+│   │   ├── schemas/             API の入出力と WebSocket イベントの形（auth / room / message / event）
+│   │   ├── services/            業務ロジック
+│   │   │   ├── room_access.py       ルームの存在確認と参加者チェック（権限の判定はここだけ）
+│   │   │   ├── system_messages.py   「参加しました」などのお知らせの作成
+│   │   │   ├── auth.py              ログイン・トークン検証・ログアウト
+│   │   │   ├── rooms.py             ルームの作成・名前変更
+│   │   │   ├── members.py           参加・退会・既読
+│   │   │   ├── messages.py          メッセージの一覧・投稿・取り消し
+│   │   │   └── room_summaries.py    一覧用の集計（人数・未読数・最新メッセージ）と検索
+│   │   ├── storage/images.py    画像の検証・保存・削除
+│   │   ├── realtime/            WebSocket の接続管理（connections）と参加者への配信（publisher）
+│   │   └── api/
+│   │       ├── deps.py              DB セッション・ログイン中ユーザーの取得
+│   │       └── routes/              auth / rooms / members / messages / websocket
+│   └── tests/                   API 単位のテスト（共通の準備は conftest.py）
+│
 └── frontend/src/
-    ├── app/               # ページ（ログイン / ルーム一覧 / チャットルーム）
-    ├── components/        # UI コンポーネント（RealtimeProvider: WebSocket 接続の共有）
-    ├── hooks/             # useSession（ログイン状態）, useRoomMessages（取得・購読・送信・既読）
-    └── lib/               # API クライアント、型、設定、整形ユーティリティ
+    ├── app/                     ルーティング（/、/rooms、/rooms/[roomId]）
+    ├── features/
+    │   ├── auth/                ログインフォーム・ログイン必須の制御（SessionGuard）
+    │   ├── realtime/            WebSocket 接続の共有（RealtimeProvider）
+    │   ├── rooms/               トーク一覧画面（一覧・検索・作成・参加）
+    │   └── chat/                チャット画面（メッセージ一覧・吹き出し・入力欄・トーク名編集）
+    ├── components/              共通の UI（AppHeader / Button / ErrorMessage / Avatar / CenteredScreen）
+    ├── hooks/                   useAsyncAction（実行中・エラー表示）/ useDebouncedValue
+    └── lib/
+        ├── api/                 API クライアント（client）と呼び出し一覧（endpoints）
+        ├── messages.ts          表示文（「〇〇が参加しました」など）・重複除去
+        ├── datetime.ts          日時の表示
+        ├── session.ts           ログイン情報の保存（localStorage）
+        └── types.ts / config.ts / keyboard.ts
 ```
 
-バックエンドは **router（HTTP の入出力）→ service（ロジック）→ model（DB）** の 3 層に分けています。service は HTTP を知らずドメイン例外を投げ、`main.py` で一括して HTTP ステータスに変換します。
+---
 
 ## API
+
+認証：`Authorization: Bearer <token>`（ログインで発行）。WebSocket はクエリパラメータ `?token=`。
+
+### REST
 
 | Method | Path | 説明 |
 |---|---|---|
 | POST | `/api/auth/login` | `{name}` で入室。ユーザーを取得または作成し `{token, user}` を返す |
-| GET | `/api/auth/me` | 現在のユーザー |
-| POST | `/api/auth/logout` | トークンを無効化 |
+| GET | `/api/auth/me` | ログイン中のユーザー |
+| POST | `/api/auth/logout` | トークンを無効にする |
 | GET | `/api/rooms?q=` | ルーム一覧（参加状態・人数・未読数・最新メッセージ付き、新しい順）。`q` でルーム名を部分一致検索 |
-| POST | `/api/rooms` | ルーム作成 `{name}`。作成者は自動参加（同名は 409） |
-| GET | `/api/rooms/{room_id}` | ルーム取得（同上の付加情報付き） |
-| PATCH | `/api/rooms/{room_id}` | ルーム名の変更 `{name}`（参加者のみ。同名は 409） |
-| PUT | `/api/rooms/{room_id}/members/me` | 参加（冪等） |
-| DELETE | `/api/rooms/{room_id}/members/me` | 退会（冪等） |
-| PUT | `/api/rooms/{room_id}/read` | `{message_id}` まで既読にする（後退はしない） |
-| GET | `/api/rooms/{room_id}/messages?before_id=&limit=50` | メッセージ一覧（古い順）と `has_more` ※ |
-| POST | `/api/rooms/{room_id}/messages` | テキスト投稿 `{content}` ※ |
-| POST | `/api/rooms/{room_id}/messages/images` | 画像投稿（multipart `file`） ※ |
-| DELETE | `/api/rooms/{room_id}/messages/{message_id}` | 送信取り消し（自分のメッセージのみ） ※ |
-| WS | `/ws?token=...` | 参加中ルームのイベントを配信 |
+| POST | `/api/rooms` | ルーム作成 `{name}`。作成者は自動で参加 |
+| GET | `/api/rooms/{id}` | ルームの取得 |
+| PATCH | `/api/rooms/{id}` | トーク名の変更 `{name}` ※ |
+| PUT | `/api/rooms/{id}/members/me` | 参加（何度呼んでも同じ結果） |
+| DELETE | `/api/rooms/{id}/members/me` | 退会（何度呼んでも同じ結果） |
+| PUT | `/api/rooms/{id}/read` | `{message_id}` まで既読にする（後退はしない）※ |
+| GET | `/api/rooms/{id}/messages?before_id=&limit=50` | メッセージ一覧（古い順）と `has_more` ※ |
+| POST | `/api/rooms/{id}/messages` | テキスト投稿 `{content}` ※ |
+| POST | `/api/rooms/{id}/messages/images` | 画像投稿（multipart の `file`）※ |
+| DELETE | `/api/rooms/{id}/messages/{message_id}` | 送信取り消し（自分の投稿のみ）※ |
 
-※ ルーム参加者のみ（未参加は 403）
+※ ルームの参加者のみ。主なエラー：401 未ログイン ／ 403 権限なし（未参加・他人の投稿）／ 404 存在しない ／ 409 同名のルーム ／ 413 画像が大きすぎる ／ 415 画像以外 ／ 422 入力不正
 
-- 認証は `Authorization: Bearer <token>`（WebSocket はクエリパラメータ）
-- WebSocket イベント: `{"type": "message.created" | "message.deleted", "message": {...}}`、`{"type": "room.updated", "room": {"id", "name", "member_count"}}`（名前変更・参加・退会時）。クローズコード `4401` は認証エラー
-- メッセージは `kind` で種類を表す：`text`（`content` に本文）、`image`（`image_url`）、`room_renamed` / `member_joined` / `member_left`（システムメッセージ。`user` は操作した人、`room_renamed` の `content` は変更後のトーク名。未読に数えず取り消し不可）。取り消し済みは `is_deleted: true` で本文・画像とも `null`
-- バリデーション: ユーザー名 1–20 文字、ルーム名 1–30 文字、本文 1–1000 文字（前後の空白は除去）、画像 5MB まで
+入力の制限：ユーザー名 1〜20 文字、ルーム名 1〜30 文字、本文 1〜1000 文字（前後の空白は除去）、画像は JPEG / PNG / GIF / WebP で 5MB まで。
+
+### WebSocket（`/ws?token=...`）
+
+サーバーからクライアントへの通知専用です。参加中のルームのイベントだけが届きます。
+
+| type | 内容 | いつ |
+|---|---|---|
+| `message.created` | `{message}` | 投稿、またはお知らせ（参加・退会・名前変更）の作成 |
+| `message.deleted` | `{message}`（`is_deleted: true`） | 送信取り消し |
+| `room.updated` | `{room: {id, name, member_count}}` | 名前変更・参加・退会 |
+
+認証に失敗するとクローズコード `4401` で切断します。
+
+### メッセージの種類（`kind`）
+
+| kind | 意味 | content |
+|---|---|---|
+| `text` | テキストの投稿 | 本文 |
+| `image` | 画像の投稿（`image_url` に URL） | null |
+| `room_renamed` | お知らせ：トーク名の変更 | 変更後の名前 |
+| `member_joined` | お知らせ：参加 | null |
+| `member_left` | お知らせ：退会 | null |
+
+お知らせの `user` は操作した人です。取り消し済みは `is_deleted: true` で、`content` と `image_url` は null になります。
+
+---
 
 ## DB 設計
 
 ```mermaid
 erDiagram
-    users ||--o{ sessions : has
-    users ||--o{ room_members : joins
-    rooms ||--o{ room_members : has
-    users ||--o{ messages : posts
-    rooms ||--o{ messages : contains
+    users ||--o{ sessions : "ログイン"
+    users ||--o{ room_members : "参加"
+    rooms ||--o{ room_members : "参加者"
+    users ||--o{ messages : "投稿・操作"
+    rooms ||--o{ messages : "メッセージ"
 
     users {
         int id PK
-        string name UK
+        string name UK "ユーザー名"
         datetime created_at
     }
     sessions {
-        string token PK
+        string token PK "ログイントークン"
         int user_id FK
         datetime created_at
     }
     rooms {
         int id PK
-        string name UK
+        string name UK "ルーム名"
         datetime created_at
     }
     room_members {
         int room_id PK, FK
         int user_id PK, FK
-        int last_read_message_id
+        int last_read_message_id "既読位置"
         datetime joined_at
     }
     messages {
@@ -176,37 +286,77 @@ erDiagram
         text content "nullable"
         string image_path "nullable"
         datetime created_at
-        datetime deleted_at "nullable"
+        datetime deleted_at "nullable（取り消し）"
     }
 ```
 
-- `messages` には `(room_id, id)` の複合インデックスを張り、ルーム内のページングを効率化しています。
-- **未読数は「既読位置」方式**：メッセージごとに既読レコードを持つのではなく、`room_members.last_read_message_id` だけを持ち、それより新しい他人のメッセージ数を未読とします。書き込みが 1 行の更新で済み、未読数は 1 クエリで集計できます。
-- トーク一覧の集計（人数・未読数・最新メッセージ）はルーム横断の `GROUP BY` でまとめて取得し、N+1 クエリを避けています。
+- **未読数は「既読位置」方式**：メッセージごとに既読の記録を持つのではなく、`room_members.last_read_message_id` だけを持ちます。未読数は「既読位置より新しい、他人の投稿の数」として 1 回の集計で求まり、既読にする処理も 1 行の更新で済みます。
+- `messages` には `(room_id, id)` の複合インデックスを張り、ルーム内のページングを速くしています。
+- トーク一覧の集計（人数・未読数・最新メッセージ）は、ルームごとにクエリを投げず `GROUP BY` でまとめて取得しています（N+1 を避ける）。
+- 日時は UTC で保存し、API ではタイムゾーン付きの ISO 8601 で返します。表示はブラウザのローカル時刻です。
+
+---
 
 ## 設計上の判断
 
-要件があえて曖昧なため、以下のように解釈・判断しました。
+課題の要件はあえて曖昧にされているため、次のように解釈・判断しました。
 
-- **「簡易的な認証」**：パスワードなしでユーザー名のみで入室し、同じ名前なら同じユーザーとして扱います。ただしユーザー名をそのまま識別子に使うのではなく **セッショントークンを発行**する形にしました。API は「トークンからユーザーを特定する」だけなので、将来パスワードや OAuth を導入してもログイン処理の差し替えだけで済みます。
-- **グループチャット（公開グループ）**：「チャットルーム画面」という名称と LINE のグループトークから、複数人が参加するルームを単位にしました。招待・承認の仕組みは持たず、誰でも参加・退会できる公開グループとしています。参加者だけが閲覧・投稿・受信できるよう、API と WebSocket の両方で参加状態を確認します。
-- **送信は REST、配信は WebSocket**：送信・取り消しを REST に一本化することで、バリデーション・権限・エラーレスポンスを通常の API と同じ仕組みで扱え、テストもしやすくなります。WebSocket はサーバー→クライアントの配信専用でシンプルに保っています。
-- **WebSocket はユーザー単位で 1 本**：ルームごとに接続すると、トーク一覧の未読数や最新メッセージをリアルタイムに更新できません。ユーザーごとに 1 本だけ接続し、サーバーが「そのルームの参加者全員」に配信することで、一覧とチャット画面が同じ接続を共有します。退会すれば自然に届かなくなります。
-- **取りこぼし対策**：WebSocket の（再）接続のたびに REST で最新ページを取得し、メッセージ ID で重複排除してマージしています。送信者は REST のレスポンスで即座に自分のメッセージを表示します。
-- **トーク名の変更は参加者全員に許可**：LINE のグループと同様、作成者に限定せず参加者なら誰でも変更できます（権限を絞る場合は `room_members` に役割列を追加して判定します）。配信イベントには未読数などユーザーごとに異なる値を含めず、全員に共通の `id` と `name` だけを載せています。
-- **システムメッセージは messages に同居**：トーク名変更の記録も `messages` の 1 行（`kind = room_renamed`）として保存します。時系列・ページング・リアルタイム配信・既読の仕組みをそのまま使えるためです。表示文は DB に持たず種類と値（変更後の名前・操作者）だけを保存し、文言はフロントエンドで組み立てます。参加・退会の通知（`member_joined` / `member_left`）も同じ仕組みで、操作と同じトランザクションで記録しています。
-- **送信取り消しは論理削除**：レコードは残して `deleted_at` を記録し、本文と画像ファイルは消去します。履歴上の位置が保たれ、LINE と同じく「取り消しました」と表示できます。取り消しは本人のみ可能です。
-- **画像は中身で検証**：拡張子や Content-Type はクライアントの申告なので信用せず、先頭バイト列（マジックナンバー）で形式を判定し、推測不能な UUID のファイル名で保存します。保存処理は `storage.py` に閉じているので、S3 などへの差し替えも容易です。
-- **検索はサーバー側で実行**：全件を取得してクライアントで絞り込むのではなく `?q=` で問い合わせます。ルーム数が増えても転送量が増えず、一覧 API の 1 つのパラメータとして自然に拡張できます。`%` と `_` はエスケープして通常の文字として扱います。
-- **カーソル型ページング**：`OFFSET` ではなく `before_id` を使うことで、新着メッセージが増えても取得範囲がずれません。
-- **日時は UTC で保存**し、ISO 8601（タイムゾーン付き）で返却、表示時にブラウザのローカル時刻へ変換します。
+| テーマ | 判断 | 理由 |
+|---|---|---|
+| 簡易的な認証 | パスワードなし・ユーザー名だけで入室。ただし **トークンを発行** する | API は「トークンから本人を特定する」だけにしておけば、将来パスワードや OAuth を入れてもログイン処理の差し替えで済む |
+| 個人かグループか | **グループ（公開ルーム）**。誰でも参加・退会できる | 「チャットルーム」という言葉と LINE のグループトークから。参加者だけが読み書きできるよう、API と WebSocket の両方で確認する |
+| 送信と配信 | **送信は REST、配信は WebSocket** | 入力チェック・権限・エラー応答を通常の API と同じ仕組みで扱え、テストもしやすい。WebSocket は通知専用で単純に保てる |
+| WebSocket の単位 | **ユーザーごとに 1 本** | ルームごとに繋ぐとトーク一覧の未読数を更新できない。サーバーが参加者に配る形なら、退会すれば自然に届かなくなる |
+| 取りこぼし対策 | 接続・再接続のたびに REST で最新を取り直し、**id で重複を除く** | WebSocket が切れていた間のメッセージも失わない。送信者は API のレスポンスで即座に表示できる |
+| お知らせ | **messages に種類（kind）を付けて同じ表に保存** | 並び順・ページング・配信・既読の仕組みをそのまま使える。文言は保存せず画面側で組み立てる |
+| 送信取り消し | **論理削除**（本文と画像は消す） | 履歴上の位置が残り、LINE と同じく「取り消しました」と表示できる |
+| 画像 | **中身（先頭バイト）で形式を判定**、推測できない UUID のファイル名で保存 | 拡張子や Content-Type はクライアントの自己申告なので信用しない。保存処理は `storage/` に閉じており S3 などへの差し替えも容易 |
+| 過去ログ | **カーソル方式**（`before_id`） | OFFSET 方式と違い、新着が増えても取得範囲がずれない |
+| 検索 | **サーバー側で検索**（`?q=`、`%` `_` はエスケープ） | ルームが増えても通信量が増えない |
+| トーク名の変更 | **参加者なら誰でも** | LINE のグループと同じ。権限を絞るなら `room_members` に役割を追加して `room_access` で判定する |
 
-## 制約と今後の拡張案
+---
 
-- 接続管理はプロセス内メモリのため、単一プロセス前提です。複数プロセス／サーバーで動かす場合は `realtime.py` の配信を Redis Pub/Sub 等に置き換えます。
-- テーブルは起動時に `create_all` で作成し、既存データを保ったまま追加できる列（`messages.kind`）は `app/migrations.py` で自動追加しています。それ以外の不一致は検出して停止します。本格運用では Alembic によるマイグレーションに置き換えます。
-- 画像の URL は推測不能ですが認証はかけていません。非公開にする場合は認証付きの配信エンドポイント（または署名付き URL）に置き換えます。
-- トークンに有効期限がありません（`sessions.created_at` を使って期限切れを判定する拡張が可能）。
-- **個人チャット（1 対 1）**：`rooms` に種別（group / direct）を追加し、2 人のメンバーで作成すれば現在の仕組み（メンバー・未読・配信）をそのまま使えます。
-- **招待制のグループ**：`room_invitations`（招待者・被招待者・状態）を追加し、承認時に `room_members` へ追加する形で拡張できます。
-- 既読表示（「既読 3」）、入力中表示、メッセージ編集などは未実装です。既読表示は各メンバーの `last_read_message_id` から計算できます。
+## 開発
+
+### テスト・静的チェック
+
+```bash
+cd backend
+uv run pytest            # API・WebSocket・権限・未読数・画像・お知らせ・移行のテスト
+uv run ruff check .      # Lint
+uv run ruff format .     # 整形
+
+cd frontend
+npm run lint             # ESLint
+npm run format           # Prettier で整形（確認だけなら npm run format:check）
+npm run build            # 型チェックを含む本番ビルド
+```
+
+### 環境変数（すべて任意）
+
+| 変数 | 既定値 | 説明 |
+|---|---|---|
+| `DATABASE_URL`（backend） | `sqlite:///./chat.db` | DB の接続先 |
+| `CORS_ORIGINS`（backend） | `http://localhost:3000,http://127.0.0.1:3000` | 許可するオリジン（カンマ区切り） |
+| `UPLOAD_DIR`（backend） | `./uploads` | 画像の保存先 |
+| `MAX_IMAGE_BYTES`（backend） | `5242880` | 画像の最大サイズ（バイト） |
+| `NEXT_PUBLIC_API_BASE_URL`（frontend） | `http://localhost:8000` | バックエンドの URL |
+
+`backend/.env.example`、`frontend/.env.example` をコピーして `.env` / `.env.local` を作ると上書きできます。
+
+### DB のスキーマ変更について
+
+起動時に `core/migrations.py` が、足りないテーブルを作り、既存データを保ったまま追加できる列（`messages.kind`）を自動で追加します。それ以外の違いがある古い DB の場合は、分かりやすいエラーで停止するので `backend/chat.db` を削除して再起動してください。
+
+---
+
+## 制約と今後の拡張
+
+- **単一プロセス前提**：WebSocket の接続はメモリ上で管理しています。複数プロセス・複数サーバーで動かす場合は `realtime/connections.py` の送信を Redis Pub/Sub などに置き換えます。
+- **マイグレーション**：本格的に運用する場合は Alembic を導入します。
+- **画像の公開範囲**：URL は推測できませんが認証はかけていません。非公開にするなら認証付きの配信や署名付き URL にします。
+- **トークンの有効期限**：未実装です（`sessions.created_at` を使って判定できます）。
+- **個人チャット（1 対 1）**：`rooms` に種類（group / direct）を追加し、2 人で作れば、参加者・未読・配信の仕組みをそのまま使えます。
+- **招待制のグループ**：招待の表（招待した人・された人・状態）を追加し、承認したら `room_members` に追加します。
+- **既読表示（「既読 3」）**：各参加者の `last_read_message_id` から計算できます。入力中の表示やメッセージの編集は未実装です。
