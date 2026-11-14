@@ -97,6 +97,16 @@ def _escape_like(text: str) -> str:
     return text
 
 
+def get_room_ref(db: Session, room_id: int) -> schemas.RoomRef:
+    room = get_room(db, room_id)
+    member_count = db.scalar(
+        select(func.count())
+        .select_from(models.RoomMember)
+        .where(models.RoomMember.room_id == room_id)
+    )
+    return schemas.RoomRef(id=room.id, name=room.name, member_count=member_count or 0)
+
+
 def get_room_view(db: Session, room_id: int, user: models.User) -> schemas.RoomOut:
     return _build_views(db, [get_room(db, room_id)], user)[0]
 

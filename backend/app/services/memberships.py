@@ -39,22 +39,40 @@ def add_member(db: Session, room_id: int, user_id: int) -> None:
     )
 
 
-def join(db: Session, room_id: int, user: models.User) -> None:
-    """参加する（参加済みなら何もしない）。"""
+def join(db: Session, room_id: int, user: models.User) -> models.Message | None:
+    """参加し、「〇〇が参加しました」のシステムメッセージを記録して返す。
+
+    参加済みなら何もせず None を返す（冪等）。
+    """
     get_room(db, room_id)
     if get_membership(db, room_id, user.id) is not None:
-        return
+        return None
     add_member(db, room_id, user.id)
-    db.commit()
+    return _record(db, room_id, user, models.MessageKind.MEMBER_JOINED)
 
 
-def leave(db: Session, room_id: int, user: models.User) -> None:
-    """退会する（未参加なら何もしない）。"""
+def leave(db: Session, room_id: int, user: models.User) -> models.Message | None:
+    """退会し、「〇〇が退会しました」のシステムメッセージを記録して返す。
+
+    未参加なら何もせず None を返す（冪等）。
+    """
     get_room(db, room_id)
     membership = get_membership(db, room_id, user.id)
-    if membership is not None:
-        db.delete(membership)
-        db.commit()
+    if membership is None:
+        return None
+    db.delete(membership)
+    return _record(db, room_id, user, models.MessageKind.MEMBER_LEFT)
+
+
+def _record(
+    db: Session, room_id: int, user: models.User, kind: models.MessageKind
+) -> models.Message:
+    """参加状態の変更とシステムメッセージを同じトランザクションで保存する。"""
+    notice = models.Message(room_id=room_id, user_id=user.id, kind=kind)
+    db.add(notice)
+    db.commit()
+    db.refresh(notice)
+    return notice
 
 
 def list_member_ids(db: Session, room_id: int) -> Sequence[int]:

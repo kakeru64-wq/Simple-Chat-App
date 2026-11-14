@@ -9,8 +9,9 @@ export type User = {
 /**
  * メッセージの種類。text / image はユーザーの投稿、それ以外はシステムメッセージ（操作の記録）。
  * - room_renamed: トーク名の変更（content に変更後の名前、user は変更した人）
+ * - member_joined / member_left: 参加・退会（user は参加・退会した人）
  */
-export type MessageKind = "text" | "image" | "room_renamed";
+export type MessageKind = "text" | "image" | "room_renamed" | "member_joined" | "member_left";
 
 export type Message = {
   id: number;
@@ -53,10 +54,10 @@ export type ChatMessageEvent = {
   message: Message;
 };
 
-/** ルーム情報の変更（名前変更など）。全参加者に共通の情報のみ含む */
+/** ルーム情報の変更（名前変更・参加・退会）。全参加者に共通の情報のみ含む */
 export type RoomUpdatedEvent = {
   type: "room.updated";
-  room: Pick<Room, "id" | "name">;
+  room: Pick<Room, "id" | "name" | "member_count">;
 };
 
 export type ServerEvent = ChatMessageEvent | RoomUpdatedEvent;

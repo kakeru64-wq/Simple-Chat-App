@@ -61,6 +61,8 @@ class MessageKind(StrEnum):
     IMAGE = "image"
     # 以下はシステムメッセージ（操作の記録）。user_id は操作したユーザー
     ROOM_RENAMED = "room_renamed"  # content に変更後のトーク名
+    MEMBER_JOINED = "member_joined"
+    MEMBER_LEFT = "member_left"
 
 
 # ユーザーが投稿したメッセージの種類（未読数の対象・取り消し可能）

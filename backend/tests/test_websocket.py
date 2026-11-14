@@ -65,8 +65,42 @@ def test_rename_is_sent_to_members(client, alice, bob, room_id):
         client.patch(f"/api/rooms/{room_id}", json={"name": "renamed"}, headers=alice)
         updated = ws.receive_json()
         notice = ws.receive_json()
-    assert updated == {"type": "room.updated", "room": {"id": room_id, "name": "renamed"}}
+    assert updated == {
+        "type": "room.updated",
+        "room": {"id": room_id, "name": "renamed", "member_count": 2},
+    }
     assert notice["type"] == "message.created"
     assert notice["message"]["kind"] == "room_renamed"
     assert notice["message"]["content"] == "renamed"
     assert notice["message"]["user"]["name"] == "alice"
+
+
+def test_join_is_announced_to_members(client, alice, bob):
+    club = create_room(client, alice, "club")
+    with client.websocket_connect(f"/ws?token={_token(alice)}") as ws:
+        client.put(f"/api/rooms/{club}/members/me", headers=bob)
+        notice = ws.receive_json()
+        updated = ws.receive_json()
+    assert notice["message"]["kind"] == "member_joined"
+    assert notice["message"]["user"]["name"] == "bob"
+    assert updated == {
+        "type": "room.updated",
+        "room": {"id": club, "name": "club", "member_count": 2},
+    }
+
+
+def test_leave_is_announced_to_remaining_members_only(client, alice, bob, room_id):
+    with (
+        client.websocket_connect(f"/ws?token={_token(alice)}") as alice_ws,
+        client.websocket_connect(f"/ws?token={_token(bob)}") as bob_ws,
+    ):
+        client.delete(f"/api/rooms/{room_id}/members/me", headers=bob)
+        notice = alice_ws.receive_json()
+        updated = alice_ws.receive_json()
+        # bob には退会通知が届かない（次に届くのは bob 自身のルームへの投稿）
+        other = create_room(client, bob, "bob-room")
+        post(client, bob, other, "ping")
+        assert bob_ws.receive_json()["message"]["content"] == "ping"
+
+    assert notice["message"]["kind"] == "member_left"
+    assert updated["room"]["member_count"] == 1

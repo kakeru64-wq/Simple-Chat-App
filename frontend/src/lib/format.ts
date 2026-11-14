@@ -43,6 +43,10 @@ export function systemMessageText(message: Message, myUserId: number): string {
   switch (message.kind) {
     case "room_renamed":
       return `${actorName(message, myUserId)}がトーク名を「${message.content ?? ""}」に変更しました`;
+    case "member_joined":
+      return `${actorName(message, myUserId)}が参加しました`;
+    case "member_left":
+      return `${actorName(message, myUserId)}が退会しました`;
     default:
       return "";
   }

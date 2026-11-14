@@ -97,7 +97,8 @@ def test_rename_posts_system_message(client, alice, bob, room_id):
 
 def test_rename_to_same_name_posts_nothing(client, alice, room_id):
     client.patch(f"/api/rooms/{room_id}", json={"name": "lobby"}, headers=alice)
-    assert _messages(client, alice, room_id) == []
+    kinds = [m["kind"] for m in _messages(client, alice, room_id)]
+    assert "room_renamed" not in kinds
 
 
 def test_system_message_is_not_unread(client, alice, bob, room_id):

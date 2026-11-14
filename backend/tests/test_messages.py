@@ -3,6 +3,11 @@ from tests.conftest import create_room, post
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 
 
+def _user_messages(messages: list[dict]) -> list[dict]:
+    """システムメッセージ（参加通知など）を除いた、ユーザーの投稿だけ。"""
+    return [m for m in messages if m["kind"] in ("text", "image")]
+
+
 def test_post_and_list_messages(client, alice, bob, room_id):
     first = post(client, alice, room_id, "hi")
     assert first["user"]["name"] == "alice"
@@ -12,10 +17,11 @@ def test_post_and_list_messages(client, alice, bob, room_id):
     post(client, bob, room_id, "hello")
 
     body = client.get(f"/api/rooms/{room_id}/messages", headers=alice).json()
-    assert [m["content"] for m in body["messages"]] == ["hi", "hello"]  # 古い順
-    assert [m["user"]["name"] for m in body["messages"]] == ["alice", "bob"]
+    posted = _user_messages(body["messages"])
+    assert [m["content"] for m in posted] == ["hi", "hello"]  # 古い順
+    assert [m["user"]["name"] for m in posted] == ["alice", "bob"]
     assert body["has_more"] is False
-    assert body["messages"][0]["created_at"].endswith("+00:00")
+    assert posted[0]["created_at"].endswith("+00:00")
 
 
 def test_messages_are_isolated_per_room(client, alice, room_id):
@@ -25,7 +31,8 @@ def test_messages_are_isolated_per_room(client, alice, room_id):
     assert body["messages"] == []
 
 
-def test_pagination_with_before_id(client, alice, room_id):
+def test_pagination_with_before_id(client, alice):
+    room_id = create_room(client, alice, "solo")  # システムメッセージが入らないルーム
     for i in range(5):
         post(client, alice, room_id, f"m{i}")
     url = f"/api/rooms/{room_id}/messages"
@@ -71,6 +78,7 @@ def test_delete_own_message(client, alice, room_id):
 
     # 履歴には「取り消し」として位置が残る
     listed = client.get(f"/api/rooms/{room_id}/messages", headers=alice).json()["messages"]
+    listed = _user_messages(listed)
     assert [(m["id"], m["is_deleted"], m["content"]) for m in listed] == [(msg["id"], True, None)]
 
 

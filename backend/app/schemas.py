@@ -58,7 +58,7 @@ class MessageOut(ORMModel):
     id: int
     room_id: int
     user: UserOut = Field(description="投稿者（システムメッセージでは操作したユーザー）")
-    kind: Literal["text", "image", "room_renamed"]
+    kind: Literal["text", "image", "room_renamed", "member_joined", "member_left"]
     content: str | None = Field(
         description="テキスト本文（room_renamed では変更後のトーク名）。画像・削除済みは null"
     )
@@ -94,10 +94,9 @@ class RoomUpdate(BaseModel):
 class RoomRef(BaseModel):
     """全参加者に共通のルーム情報（ユーザーごとの未読数などを含まない）。配信用。"""
 
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     name: str
+    member_count: int
 
 
 class RoomOut(BaseModel):

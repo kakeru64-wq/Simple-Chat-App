@@ -75,3 +75,48 @@ def test_history_before_joining_is_not_unread(client, alice, bob):
     assert _room(client, bob, room_id)["unread_count"] == 0
     post(client, alice, room_id, "after")
     assert _room(client, bob, room_id)["unread_count"] == 1
+
+
+# ---- 参加・退会のシステムメッセージ ----
+def _messages(client, headers, room_id) -> list[dict]:
+    return client.get(f"/api/rooms/{room_id}/messages", headers=headers).json()["messages"]
+
+
+def test_join_and_leave_post_system_messages(client, alice, bob):
+    room_id = create_room(client, alice, "club")
+    client.put(f"/api/rooms/{room_id}/members/me", headers=bob)
+    client.delete(f"/api/rooms/{room_id}/members/me", headers=bob)
+
+    notices = [(m["kind"], m["user"]["name"]) for m in _messages(client, alice, room_id)]
+    assert notices == [("member_joined", "bob"), ("member_left", "bob")]
+    assert _room(client, alice, room_id)["last_message"]["kind"] == "member_left"
+
+
+def test_creating_a_room_posts_no_join_message(client, alice):
+    room_id = create_room(client, alice, "club")
+    assert _messages(client, alice, room_id) == []
+
+
+def test_repeated_join_or_leave_posts_once(client, alice, bob):
+    room_id = create_room(client, alice, "club")
+    for _ in range(2):
+        client.put(f"/api/rooms/{room_id}/members/me", headers=bob)
+    for _ in range(2):
+        client.delete(f"/api/rooms/{room_id}/members/me", headers=bob)
+    kinds = [m["kind"] for m in _messages(client, alice, room_id)]
+    assert kinds == ["member_joined", "member_left"]
+
+
+def test_join_and_leave_messages_are_not_unread(client, alice, bob):
+    room_id = create_room(client, alice, "club")
+    client.put(f"/api/rooms/{room_id}/members/me", headers=bob)
+    client.delete(f"/api/rooms/{room_id}/members/me", headers=bob)
+    assert _room(client, alice, room_id)["unread_count"] == 0
+
+
+def test_join_and_leave_messages_cannot_be_deleted(client, alice, bob):
+    room_id = create_room(client, alice, "club")
+    client.put(f"/api/rooms/{room_id}/members/me", headers=bob)
+    notice_id = _messages(client, bob, room_id)[-1]["id"]
+    res = client.delete(f"/api/rooms/{room_id}/messages/{notice_id}", headers=bob)
+    assert res.status_code == 403

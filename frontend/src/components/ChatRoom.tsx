@@ -47,7 +47,7 @@ export function ChatRoom({ roomId }: { roomId: number }) {
     };
   }, [roomId]);
 
-  // 他の参加者による名前変更を反映する
+  // 他の参加者による名前変更・参加・退会（人数）を反映する
   useRealtimeEvent((event) => {
     if (event.type !== "room.updated" || event.room.id !== roomId) return;
     setState((prev) =>

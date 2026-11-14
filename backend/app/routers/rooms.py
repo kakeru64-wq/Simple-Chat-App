@@ -2,9 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Query, status
 
-from app import schemas
+from app import events, schemas
 from app.deps import CurrentUser, DbSession
-from app.realtime import manager
 from app.services import memberships as membership_service
 from app.services import rooms as room_service
 
@@ -45,33 +44,35 @@ def rename_room(
     background_tasks: BackgroundTasks,
 ):
     """ルーム名を変更する（参加者のみ。同名のルームがあれば 409）。参加者全員へ配信する。"""
-    room, notice = room_service.rename_room(db, room_id, user, body.name)
+    _room, notice = room_service.rename_room(db, room_id, user, body.name)
     if notice is not None:
-        member_ids = membership_service.list_member_ids(db, room_id)
-        events = [
-            schemas.RoomUpdatedEvent(room=schemas.RoomRef.model_validate(room)),
-            schemas.MessageEvent(
-                type="message.created", message=schemas.MessageOut.model_validate(notice)
-            ),
-        ]
-        for event in events:
-            background_tasks.add_task(
-                manager.send_to_users, member_ids, event.model_dump(mode="json")
-            )
+        events.publish_room_updated(db, background_tasks, room_id)
+        events.publish_message(db, background_tasks, "message.created", notice)
     return room_service.get_room_view(db, room_id, user)
 
 
 @router.put("/{room_id}/members/me", response_model=schemas.RoomOut)
-def join_room(room_id: int, db: DbSession, user: CurrentUser):
-    """参加する（冪等）。"""
-    membership_service.join(db, room_id, user)
+def join_room(room_id: int, db: DbSession, user: CurrentUser, background_tasks: BackgroundTasks):
+    """参加する（冪等）。参加者全員へ「参加しました」と人数の変更を配信する。"""
+    notice = membership_service.join(db, room_id, user)
+    if notice is not None:
+        events.publish_message(db, background_tasks, "message.created", notice)
+        events.publish_room_updated(db, background_tasks, room_id)
     return room_service.get_room_view(db, room_id, user)
 
 
 @router.delete("/{room_id}/members/me", status_code=status.HTTP_204_NO_CONTENT)
-def leave_room(room_id: int, db: DbSession, user: CurrentUser) -> None:
-    """退会する（冪等）。退会後はメッセージの閲覧・投稿・受信ができなくなる。"""
-    membership_service.leave(db, room_id, user)
+def leave_room(
+    room_id: int, db: DbSession, user: CurrentUser, background_tasks: BackgroundTasks
+) -> None:
+    """退会する（冪等）。退会後はメッセージの閲覧・投稿・受信ができなくなる。
+
+    残った参加者へ「退会しました」と人数の変更を配信する。
+    """
+    notice = membership_service.leave(db, room_id, user)
+    if notice is not None:
+        events.publish_message(db, background_tasks, "message.created", notice)
+        events.publish_room_updated(db, background_tasks, room_id)
 
 
 @router.put("/{room_id}/read", status_code=status.HTTP_204_NO_CONTENT)
