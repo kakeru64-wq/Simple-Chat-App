@@ -1,3 +1,5 @@
+"""ルーム名の検索（GET /api/rooms?q=）"""
+
 from tests.conftest import create_room
 
 

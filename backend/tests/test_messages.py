@@ -1,11 +1,6 @@
-from tests.conftest import create_room, post
+"""テキストメッセージの一覧・投稿・取り消し（/api/rooms/{id}/messages）"""
 
-PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
-
-
-def _user_messages(messages: list[dict]) -> list[dict]:
-    """システムメッセージ（参加通知など）を除いた、ユーザーの投稿だけ。"""
-    return [m for m in messages if m["kind"] in ("text", "image")]
+from tests.conftest import create_room, list_messages, post, user_messages
 
 
 def test_post_and_list_messages(client, alice, bob, room_id):
@@ -17,7 +12,7 @@ def test_post_and_list_messages(client, alice, bob, room_id):
     post(client, bob, room_id, "hello")
 
     body = client.get(f"/api/rooms/{room_id}/messages", headers=alice).json()
-    posted = _user_messages(body["messages"])
+    posted = user_messages(body["messages"])
     assert [m["content"] for m in posted] == ["hi", "hello"]  # 古い順
     assert [m["user"]["name"] for m in posted] == ["alice", "bob"]
     assert body["has_more"] is False
@@ -27,8 +22,7 @@ def test_post_and_list_messages(client, alice, bob, room_id):
 def test_messages_are_isolated_per_room(client, alice, room_id):
     other = create_room(client, alice, "other")
     post(client, alice, room_id, "in lobby")
-    body = client.get(f"/api/rooms/{other}/messages", headers=alice).json()
-    assert body["messages"] == []
+    assert list_messages(client, alice, other) == []
 
 
 def test_pagination_with_before_id(client, alice):
@@ -68,7 +62,7 @@ def test_messages_require_auth(client, room_id):
     assert res.status_code == 401
 
 
-# ---- 削除 ----
+# ---- 取り消し ----
 def test_delete_own_message(client, alice, room_id):
     msg = post(client, alice, room_id, "secret")
     res = client.delete(f"/api/rooms/{room_id}/messages/{msg['id']}", headers=alice)
@@ -77,8 +71,7 @@ def test_delete_own_message(client, alice, room_id):
     assert res.json()["content"] is None
 
     # 履歴には「取り消し」として位置が残る
-    listed = client.get(f"/api/rooms/{room_id}/messages", headers=alice).json()["messages"]
-    listed = _user_messages(listed)
+    listed = user_messages(list_messages(client, alice, room_id))
     assert [(m["id"], m["is_deleted"], m["content"]) for m in listed] == [(msg["id"], True, None)]
 
 
@@ -93,50 +86,3 @@ def test_delete_message_in_wrong_room_returns_404(client, alice, room_id):
     msg = post(client, alice, room_id, "x")
     res = client.delete(f"/api/rooms/{other}/messages/{msg['id']}", headers=alice)
     assert res.status_code == 404
-
-
-# ---- 画像 ----
-def _upload(client, headers, room_id, data: bytes, filename="a.png", content_type="image/png"):
-    return client.post(
-        f"/api/rooms/{room_id}/messages/images",
-        files={"file": (filename, data, content_type)},
-        headers=headers,
-    )
-
-
-def test_upload_image_and_fetch_it(client, alice, room_id):
-    res = _upload(client, alice, room_id, PNG_BYTES)
-    assert res.status_code == 201
-    body = res.json()
-    assert body["kind"] == "image"
-    assert body["content"] is None
-    assert body["image_url"].startswith("/uploads/") and body["image_url"].endswith(".png")
-
-    image = client.get(body["image_url"])
-    assert image.status_code == 200
-    assert image.content == PNG_BYTES
-
-
-def test_upload_rejects_non_image_even_with_image_content_type(client, alice, room_id):
-    res = _upload(client, alice, room_id, b"<script>alert(1)</script>")
-    assert res.status_code == 415
-
-
-def test_upload_rejects_too_large_image(client, alice, room_id):
-    res = _upload(client, alice, room_id, PNG_BYTES + b"\x00" * 2048)
-    assert res.status_code == 413
-
-
-def test_upload_requires_membership(client, alice, bob):
-    room_id = create_room(client, alice, "club")
-    assert _upload(client, bob, room_id, PNG_BYTES).status_code == 403
-
-
-def test_deleting_image_message_removes_file(client, alice, room_id):
-    image_url = _upload(client, alice, room_id, PNG_BYTES).json()["image_url"]
-    msg_id = client.get(f"/api/rooms/{room_id}/messages", headers=alice).json()["messages"][-1][
-        "id"
-    ]
-    res = client.delete(f"/api/rooms/{room_id}/messages/{msg_id}", headers=alice)
-    assert res.json()["image_url"] is None
-    assert client.get(image_url).status_code == 404

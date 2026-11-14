@@ -1,11 +1,14 @@
+"""/api/rooms/{room_id}/messages : メッセージの一覧・投稿（テキスト / 画像）・取り消し"""
+
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, File, Query, UploadFile, status
 
-from app import events, schemas
-from app.config import get_settings
-from app.deps import CurrentUser, DbSession
-from app.services import messages as message_service
+from app import schemas
+from app.api.deps import CurrentUser, DbSession
+from app.core.config import get_settings
+from app.realtime import publisher
+from app.services import messages
 
 router = APIRouter(prefix="/api/rooms/{room_id}/messages", tags=["messages"])
 
@@ -18,38 +21,36 @@ def list_messages(
     before_id: Annotated[int | None, Query(description="この ID より古いものを取得")] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ):
-    messages, has_more = message_service.list_messages(
-        db, room_id, user, before_id=before_id, limit=limit
-    )
-    return {"messages": messages, "has_more": has_more}
+    items, has_more = messages.list_messages(db, room_id, user, before_id=before_id, limit=limit)
+    return {"messages": items, "has_more": has_more}
 
 
 @router.post("", response_model=schemas.MessageOut, status_code=status.HTTP_201_CREATED)
-def create_message(
+def post_text(
     room_id: int,
     body: schemas.MessageCreate,
     db: DbSession,
     user: CurrentUser,
     background_tasks: BackgroundTasks,
 ):
-    """テキストメッセージを投稿し、ルーム参加者へ配信する。"""
-    message = message_service.create_text_message(db, room_id, user, body.content)
-    return events.publish_message(db, background_tasks, "message.created", message)
+    """テキストを投稿し、参加者へ配信する。"""
+    message = messages.post_text(db, room_id, user, body.content)
+    return publisher.publish_message(db, background_tasks, "message.created", message)
 
 
 @router.post("/images", response_model=schemas.MessageOut, status_code=status.HTTP_201_CREATED)
-def create_image_message(
+def post_image(
     room_id: int,
     file: Annotated[UploadFile, File(description="JPEG / PNG / GIF / WebP（5MB まで）")],
     db: DbSession,
     user: CurrentUser,
     background_tasks: BackgroundTasks,
 ):
-    """画像メッセージを投稿し、ルーム参加者へ配信する。"""
-    # 上限 + 1 バイトだけ読み、超過の判定はサービス層（storage）に任せる
+    """画像を投稿し、参加者へ配信する。"""
+    # 上限 + 1 バイトだけ読み、サイズ超過の判定は storage に任せる
     data = file.file.read(get_settings().max_image_bytes + 1)
-    message = message_service.create_image_message(db, room_id, user, data)
-    return events.publish_message(db, background_tasks, "message.created", message)
+    message = messages.post_image(db, room_id, user, data)
+    return publisher.publish_message(db, background_tasks, "message.created", message)
 
 
 @router.delete("/{message_id}", response_model=schemas.MessageOut)
@@ -60,6 +61,6 @@ def delete_message(
     user: CurrentUser,
     background_tasks: BackgroundTasks,
 ):
-    """自分のメッセージを取り消す。取り消し後の状態を返し、参加者へ配信する。"""
-    message = message_service.delete_message(db, room_id, message_id, user)
-    return events.publish_message(db, background_tasks, "message.deleted", message)
+    """自分の投稿を取り消す。取り消し後の状態を返し、参加者へ配信する。"""
+    message = messages.delete_message(db, room_id, message_id, user)
+    return publisher.publish_message(db, background_tasks, "message.deleted", message)

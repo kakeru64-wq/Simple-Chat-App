@@ -1,5 +1,8 @@
-"""ドメイン例外。サービス層は HTTP を知らず、これらを送出する。
-HTTP ステータスへの変換は main.py の例外ハンドラで一元的に行う。"""
+"""ドメイン例外。
+
+サービス層は HTTP を知らず、これらの例外を送出するだけにする。
+HTTP ステータスへの変換は main.py の例外ハンドラで一括して行う。
+"""
 
 
 class AppError(Exception):
@@ -11,10 +14,14 @@ class AppError(Exception):
 
 
 class UnauthorizedError(AppError):
+    """ログインしていない・トークンが無効"""
+
     status_code = 401
 
 
 class ForbiddenError(AppError):
+    """権限がない（未参加のルーム・他人のメッセージなど）"""
+
     status_code = 403
 
 
@@ -23,6 +30,8 @@ class NotFoundError(AppError):
 
 
 class ConflictError(AppError):
+    """一意であるべき値の重複（同名のルームなど）"""
+
     status_code = 409
 
 

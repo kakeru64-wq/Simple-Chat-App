@@ -10,7 +10,8 @@ create_all は「無いテーブルを作る」だけで、既存テーブルへ
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
-from app.db import Base
+import app.models  # noqa: F401  テーブル定義を Base.metadata に登録する
+from app.core.database import Base
 
 
 def _messages_columns(engine: Engine) -> set[str] | None:

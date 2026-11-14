@@ -3,7 +3,7 @@
 import pytest
 from sqlalchemy import create_engine, inspect, text
 
-from app.migrations import upgrade
+from app.core.migrations import upgrade
 
 # kind 列が無い時点の messages テーブル
 OLD_MESSAGES_DDL = """

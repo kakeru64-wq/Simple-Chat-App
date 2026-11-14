@@ -1,8 +1,6 @@
-from tests.conftest import create_room, post
+"""ルームの一覧・作成・取得・名前変更（/api/rooms）"""
 
-
-def _room(client, headers, room_id) -> dict:
-    return client.get(f"/api/rooms/{room_id}", headers=headers).json()
+from tests.conftest import create_room, get_room, post
 
 
 def test_no_rooms_initially(client, alice):
@@ -15,9 +13,9 @@ def test_rooms_require_auth(client):
 
 def test_create_room_makes_creator_a_member(client, alice, bob):
     room_id = create_room(client, alice, "random")
-    assert _room(client, alice, room_id)["is_member"] is True
-    assert _room(client, alice, room_id)["member_count"] == 1
-    assert _room(client, bob, room_id)["is_member"] is False
+    assert get_room(client, alice, room_id)["is_member"] is True
+    assert get_room(client, alice, room_id)["member_count"] == 1
+    assert get_room(client, bob, room_id)["is_member"] is False
 
 
 def test_create_duplicate_room_conflicts(client, alice):
@@ -44,15 +42,15 @@ def test_last_message_skips_deleted(client, alice, room_id):
     post(client, alice, room_id, "keep")
     latest = post(client, alice, room_id, "remove")
     client.delete(f"/api/rooms/{room_id}/messages/{latest['id']}", headers=alice)
-    assert _room(client, alice, room_id)["last_message"]["content"] == "keep"
+    assert get_room(client, alice, room_id)["last_message"]["content"] == "keep"
 
 
-# ---- ルーム名の変更 ----
+# ---- 名前変更 ----
 def test_member_can_rename_room(client, alice, bob, room_id):
     res = client.patch(f"/api/rooms/{room_id}", json={"name": "  新しい名前 "}, headers=bob)
     assert res.status_code == 200
     assert res.json()["name"] == "新しい名前"
-    assert _room(client, alice, room_id)["name"] == "新しい名前"
+    assert get_room(client, alice, room_id)["name"] == "新しい名前"
 
 
 def test_non_member_cannot_rename_room(client, alice, bob):
@@ -76,38 +74,3 @@ def test_rename_validation_and_not_found(client, alice, room_id):
     assert client.patch(url, json={"name": "  "}, headers=alice).status_code == 422
     assert client.patch(url, json={"name": "a" * 31}, headers=alice).status_code == 422
     assert client.patch("/api/rooms/9999", json={"name": "x"}, headers=alice).status_code == 404
-
-
-# ---- トーク名変更のシステムメッセージ ----
-def _messages(client, headers, room_id) -> list[dict]:
-    return client.get(f"/api/rooms/{room_id}/messages", headers=headers).json()["messages"]
-
-
-def test_rename_posts_system_message(client, alice, bob, room_id):
-    post(client, alice, room_id, "hello")
-    client.patch(f"/api/rooms/{room_id}", json={"name": "映画部"}, headers=bob)
-
-    notice = _messages(client, alice, room_id)[-1]
-    assert notice["kind"] == "room_renamed"
-    assert notice["content"] == "映画部"
-    assert notice["user"]["name"] == "bob"
-    # トーク一覧の最新メッセージにも出る
-    assert _room(client, alice, room_id)["last_message"]["kind"] == "room_renamed"
-
-
-def test_rename_to_same_name_posts_nothing(client, alice, room_id):
-    client.patch(f"/api/rooms/{room_id}", json={"name": "lobby"}, headers=alice)
-    kinds = [m["kind"] for m in _messages(client, alice, room_id)]
-    assert "room_renamed" not in kinds
-
-
-def test_system_message_is_not_unread(client, alice, bob, room_id):
-    client.patch(f"/api/rooms/{room_id}", json={"name": "renamed"}, headers=bob)
-    assert _room(client, alice, room_id)["unread_count"] == 0
-
-
-def test_system_message_cannot_be_deleted(client, alice, room_id):
-    client.patch(f"/api/rooms/{room_id}", json={"name": "renamed"}, headers=alice)
-    notice_id = _messages(client, alice, room_id)[-1]["id"]
-    res = client.delete(f"/api/rooms/{room_id}/messages/{notice_id}", headers=alice)
-    assert res.status_code == 403

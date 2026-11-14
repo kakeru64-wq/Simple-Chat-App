@@ -7,8 +7,8 @@
 import uuid
 from pathlib import Path
 
-from app.config import get_settings
-from app.errors import PayloadTooLargeError, UnsupportedMediaTypeError
+from app.core.config import get_settings
+from app.core.errors import PayloadTooLargeError, UnsupportedMediaTypeError
 
 # 先頭バイト列（マジックナンバー）で判定する。Content-Type はクライアント申告なので信用しない。
 _SIGNATURES: list[tuple[bytes, str]] = [
