@@ -14,4 +14,8 @@ export const LIMITS = {
   userName: 20,
   roomName: 30,
   message: 1000,
+  imageBytes: 5 * 1024 * 1024,
 } as const;
+
+/** アップロードできる画像形式（バックエンドは中身のバイト列でも検証する） */
+export const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];

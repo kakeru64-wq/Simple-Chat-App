@@ -1,66 +1,150 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { AppHeader } from "@/components/AppHeader";
+import { AppHeader, headerButtonClass } from "@/components/AppHeader";
+import { useAuthedSession } from "@/components/AuthenticatedShell";
 import { MessageInput } from "@/components/MessageInput";
 import { MessageList } from "@/components/MessageList";
-import { type ConnectionStatus, useRoomMessages } from "@/hooks/useRoomMessages";
+import { type ConnectionStatus, useConnectionStatus } from "@/components/RealtimeProvider";
+import { useRoomMessages } from "@/hooks/useRoomMessages";
 import { ApiError, api } from "@/lib/api";
-import type { Room, Session } from "@/lib/types";
+import type { Message, Room } from "@/lib/types";
 
-type Props = {
-  roomId: number;
-  session: Session;
-};
+type LoadState =
+  | { kind: "loading" }
+  | { kind: "not-found" }
+  | { kind: "error"; message: string }
+  | { kind: "ready"; room: Room };
 
-/** チャットルーム画面の本体（メッセージ一覧＋送信フォーム）。 */
-export function ChatRoom({ roomId, session }: Props) {
-  const [room, setRoom] = useState<Room | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const { messages, hasMore, isLoading, isLoadingOlder, error, connection, loadOlder, send } =
-    useRoomMessages(roomId, session.token);
+/** チャットルーム画面。ルーム情報を取得し、参加状態に応じて表示を切り替える。 */
+export function ChatRoom({ roomId }: { roomId: number }) {
+  const [state, setState] = useState<LoadState>({ kind: "loading" });
 
   useEffect(() => {
+    let cancelled = false;
     api
       .getRoom(roomId)
-      .then(setRoom)
+      .then((room) => !cancelled && setState({ kind: "ready", room }))
       .catch((e) => {
-        if (e instanceof ApiError && e.status === 404) setNotFound(true);
+        if (cancelled) return;
+        if (e instanceof ApiError && e.status === 404) setState({ kind: "not-found" });
+        else
+          setState({
+            kind: "error",
+            message: e instanceof ApiError ? e.message : "読み込みに失敗しました",
+          });
       });
+    return () => {
+      cancelled = true;
+    };
   }, [roomId]);
 
-  if (notFound) {
-    return (
-      <div className="flex h-dvh flex-col">
-        <AppHeader title="ルームが見つかりません" backHref="/rooms" userName={session.user.name} />
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 text-gray-600">
+  switch (state.kind) {
+    case "loading":
+      return <CenteredScreen title="…">読み込み中...</CenteredScreen>;
+    case "not-found":
+      return (
+        <CenteredScreen title="ルームが見つかりません">
           <p>このルームは存在しません。</p>
-          <Link href="/rooms" className="text-[#06C755] underline">
-            ルーム一覧へ戻る
-          </Link>
-        </div>
-      </div>
-    );
+          <BackToRooms />
+        </CenteredScreen>
+      );
+    case "error":
+      return (
+        <CenteredScreen title="エラー">
+          <p>{state.message}</p>
+          <BackToRooms />
+        </CenteredScreen>
+      );
+    case "ready":
+      return state.room.is_member ? (
+        <ChatRoomBody room={state.room} />
+      ) : (
+        <JoinPrompt room={state.room} onJoined={(room) => setState({ kind: "ready", room })} />
+      );
   }
+}
+
+/** 参加中のルーム：メッセージ一覧と送信フォーム */
+function ChatRoomBody({ room }: { room: Room }) {
+  const session = useAuthedSession();
+  const router = useRouter();
+  const connection = useConnectionStatus();
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isLeaving, setIsLeaving] = useState(false);
+  const {
+    messages,
+    hasMore,
+    isLoading,
+    isLoadingOlder,
+    error,
+    loadOlder,
+    send,
+    sendImage,
+    remove,
+  } = useRoomMessages(room.id);
+
+  const handleDelete = async (message: Message) => {
+    if (!window.confirm("このメッセージの送信を取り消しますか？\n相手の画面からも消えます。"))
+      return;
+    setActionError(null);
+    try {
+      await remove(message.id);
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : "取り消しに失敗しました");
+    }
+  };
+
+  const handleLeave = async () => {
+    if (
+      !window.confirm(
+        `「${room.name}」から退会しますか？\n退会するとメッセージを見られなくなります。`,
+      )
+    )
+      return;
+    setIsLeaving(true);
+    try {
+      await api.leaveRoom(room.id);
+      router.push("/rooms");
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : "退会に失敗しました");
+      setIsLeaving(false);
+    }
+  };
+
+  const displayError = actionError ?? error;
 
   return (
     <div className="flex h-dvh flex-col">
       <AppHeader
+        backHref="/rooms"
         title={
           <span className="flex items-center gap-2">
-            <span className="truncate">{room?.name ?? "…"}</span>
+            <span className="truncate">{room.name}</span>
+            <span className="shrink-0 text-xs font-normal text-white/70">
+              ({room.member_count})
+            </span>
             <ConnectionBadge status={connection} />
           </span>
         }
-        backHref="/rooms"
-        userName={session.user.name}
+        actions={
+          <button
+            type="button"
+            onClick={handleLeave}
+            disabled={isLeaving}
+            className={headerButtonClass}
+          >
+            退会
+          </button>
+        }
       />
 
-      {error && (
+      {displayError && (
         <p role="alert" className="bg-red-50 px-4 py-1 text-center text-xs text-red-600">
-          {error}
+          {displayError}
         </p>
       )}
 
@@ -75,11 +159,69 @@ export function ChatRoom({ roomId, session }: Props) {
           hasMore={hasMore}
           isLoadingOlder={isLoadingOlder}
           onLoadOlder={loadOlder}
+          onDelete={handleDelete}
         />
       )}
 
-      <MessageInput onSend={send} disabled={isLoading} />
+      <MessageInput onSend={send} onSendImage={sendImage} disabled={isLoading || isLeaving} />
     </div>
+  );
+}
+
+/** 未参加のルームを開いたとき：参加を促す */
+function JoinPrompt({ room, onJoined }: { room: Room; onJoined: (room: Room) => void }) {
+  const [isJoining, setIsJoining] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const join = async () => {
+    setIsJoining(true);
+    setError(null);
+    try {
+      onJoined(await api.joinRoom(room.id));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "参加に失敗しました");
+      setIsJoining(false);
+    }
+  };
+
+  return (
+    <CenteredScreen title={room.name}>
+      <p className="text-lg font-bold text-gray-800">{room.name}</p>
+      <p className="text-sm">{room.member_count}人が参加中</p>
+      <button
+        type="button"
+        onClick={join}
+        disabled={isJoining}
+        className="rounded-md bg-[#06C755] px-8 py-2.5 font-bold text-white hover:bg-[#05b14c] disabled:opacity-50"
+      >
+        {isJoining ? "参加中..." : "参加する"}
+      </button>
+      {error && (
+        <p role="alert" className="text-sm text-red-600">
+          {error}
+        </p>
+      )}
+      <BackToRooms />
+    </CenteredScreen>
+  );
+}
+
+function CenteredScreen({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex h-dvh flex-col">
+      <AppHeader title={title} backHref="/rooms" />
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-gray-50 p-4 text-center text-gray-600">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function BackToRooms() {
+  return (
+    <Link href="/rooms" className="text-sm text-[#06C755] underline">
+      トーク一覧へ戻る
+    </Link>
   );
 }
 

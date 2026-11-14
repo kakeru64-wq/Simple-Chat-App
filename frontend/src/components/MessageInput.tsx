@@ -1,46 +1,54 @@
 "use client";
 
-import { type FormEvent, type KeyboardEvent, useRef, useState } from "react";
+import { type ChangeEvent, type FormEvent, type KeyboardEvent, useRef, useState } from "react";
 
 import { ApiError } from "@/lib/api";
-import { LIMITS } from "@/lib/config";
+import { ACCEPTED_IMAGE_TYPES, LIMITS } from "@/lib/config";
 
 type Props = {
   onSend: (content: string) => Promise<void>;
+  onSendImage: (file: File) => Promise<void>;
   disabled?: boolean;
 };
 
 /**
- * メッセージ送信フォーム。
+ * メッセージ送信フォーム（テキスト・画像）。
  * Enter で送信、Shift+Enter で改行。日本語入力の変換確定の Enter では送信しない。
  */
-export function MessageInput({ onSend, disabled = false }: Props) {
+export function MessageInput({ onSend, onSendImage, disabled = false }: Props) {
   const [content, setContent] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const trimmed = content.trim();
-  const canSend = trimmed.length > 0 && !isSending && !disabled;
+  const isBusy = isSending || disabled;
 
-  const submit = async () => {
-    if (!canSend) return;
+  /** 送信処理の共通部分：二重送信防止とエラー表示 */
+  const run = async (action: () => Promise<void>, fallbackError: string) => {
     setIsSending(true);
     setError(null);
     try {
-      await onSend(trimmed);
-      setContent("");
+      await action();
+      return true;
     } catch (err) {
-      // 失敗時は入力内容を残して再送できるようにする
-      setError(err instanceof ApiError ? err.message : "送信に失敗しました");
+      setError(err instanceof ApiError ? err.message : fallbackError);
+      return false;
     } finally {
       setIsSending(false);
       textareaRef.current?.focus();
     }
   };
 
+  const submitText = async () => {
+    if (!trimmed || isBusy) return;
+    // 失敗時は入力内容を残して再送できるようにする
+    if (await run(() => onSend(trimmed), "送信に失敗しました")) setContent("");
+  };
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    void submit();
+    void submitText();
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -48,8 +56,24 @@ export function MessageInput({ onSend, disabled = false }: Props) {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      void submit();
+      void submitText();
     }
+  };
+
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // 同じファイルを続けて選べるようにリセット
+    if (!file) return;
+    // サーバーでも検証するが、明らかな誤りは送信前に知らせる
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      setError("対応していないファイル形式です（JPEG / PNG / GIF / WebP）");
+      return;
+    }
+    if (file.size > LIMITS.imageBytes) {
+      setError("ファイルサイズが大きすぎます（5MBまで）");
+      return;
+    }
+    await run(() => onSendImage(file), "画像の送信に失敗しました");
   };
 
   return (
@@ -60,6 +84,33 @@ export function MessageInput({ onSend, disabled = false }: Props) {
         </p>
       )}
       <div className="mx-auto flex max-w-3xl items-end gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPTED_IMAGE_TYPES.join(",")}
+          onChange={handleFileChange}
+          className="hidden"
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isBusy}
+          aria-label="画像を送信"
+          title="画像を送信"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 disabled:opacity-40"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            className="h-6 w-6"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.8}
+          >
+            <rect x="3" y="5" width="18" height="14" rx="2" />
+            <circle cx="8.5" cy="10" r="1.5" />
+            <path d="m21 16-5-5-8 8" />
+          </svg>
+        </button>
         <textarea
           ref={textareaRef}
           value={content}
@@ -73,10 +124,10 @@ export function MessageInput({ onSend, disabled = false }: Props) {
         />
         <button
           type="submit"
-          disabled={!canSend}
+          disabled={!trimmed || isBusy}
           className="h-10 shrink-0 rounded-full bg-[#06C755] px-4 text-sm font-bold text-white hover:bg-[#05b14c] disabled:cursor-not-allowed disabled:opacity-40"
         >
-          送信
+          {isSending ? "送信中" : "送信"}
         </button>
       </div>
     </form>

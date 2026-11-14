@@ -10,6 +10,14 @@ class AppError(Exception):
         self.detail = detail
 
 
+class UnauthorizedError(AppError):
+    status_code = 401
+
+
+class ForbiddenError(AppError):
+    status_code = 403
+
+
 class NotFoundError(AppError):
     status_code = 404
 
@@ -18,5 +26,9 @@ class ConflictError(AppError):
     status_code = 409
 
 
-class UnauthorizedError(AppError):
-    status_code = 401
+class PayloadTooLargeError(AppError):
+    status_code = 413
+
+
+class UnsupportedMediaTypeError(AppError):
+    status_code = 415

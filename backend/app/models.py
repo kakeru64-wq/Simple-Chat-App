@@ -40,7 +40,24 @@ class Room(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class RoomMember(Base):
+    """ルームの参加者。既読位置もここで管理する（未読数 = これより新しい他人のメッセージ数）。"""
+
+    __tablename__ = "room_members"
+
+    room_id: Mapped[int] = mapped_column(
+        ForeignKey("rooms.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    last_read_message_id: Mapped[int] = mapped_column(default=0)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Message(Base):
+    """テキストまたは画像のメッセージ。削除は論理削除（deleted_at）で、本文と画像は消去する。"""
+
     __tablename__ = "messages"
     # ルーム内のメッセージを id 順にページングするための複合インデックス
     __table_args__ = (Index("ix_messages_room_id_id", "room_id", "id"),)
@@ -48,7 +65,10 @@ class Message(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    content: Mapped[str] = mapped_column(Text)
+    content: Mapped[str | None] = mapped_column(Text)
+    # uploads ディレクトリ内のファイル名
+    image_path: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped[User] = relationship(lazy="joined")

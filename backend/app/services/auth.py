@@ -7,7 +7,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models
+from app.config import get_settings
 from app.errors import UnauthorizedError
+from app.services.memberships import add_member
 
 
 def login(db: Session, name: str) -> tuple[str, models.User]:
@@ -28,11 +30,21 @@ def _get_or_create_user(db: Session, name: str) -> models.User:
         user = models.User(name=name)
         db.add(user)
         db.flush()
+        _join_default_room(db, user)
         return user
     except IntegrityError:
         # 同名ユーザーが同時に作成された場合は、作成済みの方を使う
         db.rollback()
         return db.scalars(select(models.User).where(models.User.name == name)).one()
+
+
+def _join_default_room(db: Session, user: models.User) -> None:
+    """新規ユーザーは最初からデフォルトルームに参加させ、すぐ会話に入れるようにする。"""
+    room = db.scalar(
+        select(models.Room).where(models.Room.name == get_settings().default_room_name)
+    )
+    if room is not None:
+        add_member(db, room.id, user.id)
 
 
 def get_user_by_token(db: Session, token: str) -> models.User:

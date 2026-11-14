@@ -2,105 +2,77 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { useRealtimeEvent } from "@/components/RealtimeProvider";
 import { ApiError, api } from "@/lib/api";
-import { WS_BASE_URL } from "@/lib/config";
 import { mergeMessages } from "@/lib/format";
-import { clearSession } from "@/lib/session";
-import type { Message, RoomEvent } from "@/lib/types";
+import type { Message } from "@/lib/types";
 
-export type ConnectionStatus = "connecting" | "open" | "closed";
-
-// バックエンド (app/routers/ws.py) と対応するクローズコード
-const WS_CLOSE_UNAUTHORIZED = 4401;
-const WS_CLOSE_NOT_FOUND = 4404;
-const MAX_RECONNECT_DELAY_MS = 10_000;
+function toErrorMessage(e: unknown, fallback: string): string {
+  return e instanceof ApiError ? e.message : fallback;
+}
 
 /**
- * ルームのメッセージを管理するフック。
- * - WebSocket 接続のたびに REST で最新ページを取得（購読開始前・切断中の取りこぼしを補完）
- * - 新着は WebSocket で受信（切断時は指数バックオフで再接続）
+ * ルームのメッセージを管理するフック（参加中のルームでのみ使う）。
+ * - 初回は REST で最新ページを取得し、新着・削除は WebSocket イベントで反映
+ * - 再接続時は REST で最新ページを取り直して取りこぼしを補完
  * - REST と WebSocket の両方から同じメッセージが届くため id で重複排除する
+ * - 表示中の最新メッセージまでを既読にする（タブが表示されているときのみ）
  *
  * ルームが変わったときは呼び出し側で key を変えて state ごと作り直す想定。
  */
-export function useRoomMessages(roomId: number, token: string) {
+export function useRoomMessages(roomId: number) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [connection, setConnection] = useState<ConnectionStatus>("connecting");
 
-  const fetchLatest = useCallback(async () => {
-    try {
-      const res = await api.listMessages(roomId);
-      setMessages((prev) => mergeMessages(prev, res.messages));
-      // 再接続時の補完では has_more を上書きしない（既に古いページを読んでいる可能性がある）
-      setHasMore((prev) => prev || res.has_more);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "メッセージの取得に失敗しました");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [roomId]);
+  const applyIncoming = useCallback((incoming: Message[]) => {
+    setMessages((prev) => mergeMessages(prev, incoming));
+  }, []);
 
-  // WebSocket 購読
+  // 初回取得
   useEffect(() => {
-    let ws: WebSocket | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let attempt = 0;
-    let disposed = false;
-    let hasFetched = false;
-
-    const connect = () => {
-      ws = new WebSocket(`${WS_BASE_URL}/ws/rooms/${roomId}?token=${encodeURIComponent(token)}`);
-
-      ws.onopen = () => {
-        setConnection("open");
-        // 購読開始前・切断中に投稿されたメッセージを補完する
-        hasFetched = true;
-        void fetchLatest();
-        attempt = 0;
-      };
-
-      ws.onmessage = (e: MessageEvent<string>) => {
-        const event = JSON.parse(e.data) as RoomEvent;
-        if (event.type === "message.created") {
-          setMessages((prev) => mergeMessages(prev, [event.message]));
-        }
-      };
-
-      ws.onclose = (e) => {
-        if (disposed) return;
-        setConnection("closed");
-        // WebSocket が一度も繋がらない場合でも、履歴だけは REST で表示する
-        if (!hasFetched) {
-          hasFetched = true;
-          void fetchLatest();
-        }
-        if (e.code === WS_CLOSE_UNAUTHORIZED) {
-          clearSession(); // ガードによりログイン画面へ戻る
-          return;
-        }
-        if (e.code === WS_CLOSE_NOT_FOUND) return;
-
-        const delay = Math.min(1000 * 2 ** attempt, MAX_RECONNECT_DELAY_MS);
-        attempt += 1;
-        retryTimer = setTimeout(() => {
-          setConnection("connecting");
-          connect();
-        }, delay);
-      };
-    };
-
-    connect();
+    let cancelled = false;
+    api
+      .listMessages(roomId)
+      .then((res) => {
+        if (cancelled) return;
+        applyIncoming(res.messages);
+        setHasMore(res.has_more);
+      })
+      .catch((e) => !cancelled && setError(toErrorMessage(e, "メッセージの取得に失敗しました")))
+      .finally(() => !cancelled && setIsLoading(false));
     return () => {
-      disposed = true;
-      clearTimeout(retryTimer);
-      ws?.close();
+      cancelled = true;
     };
-  }, [roomId, token, fetchLatest]);
+  }, [roomId, applyIncoming]);
+
+  useRealtimeEvent((event) => {
+    if (event.type === "connection.opened") {
+      // 再接続：切断中のメッセージを補完（has_more は既に読んだ過去ページを考慮して維持）
+      api
+        .listMessages(roomId)
+        .then((res) => applyIncoming(res.messages))
+        .catch(() => {});
+      return;
+    }
+    if (event.message.room_id === roomId) applyIncoming([event.message]);
+  });
+
+  // 既読位置の更新
+  const latestId = messages.at(-1)?.id;
+  useEffect(() => {
+    if (latestId === undefined) return;
+    const markRead = () => {
+      if (document.visibilityState === "visible") {
+        api.markRead(roomId, latestId).catch(() => {});
+      }
+    };
+    markRead();
+    document.addEventListener("visibilitychange", markRead);
+    return () => document.removeEventListener("visibilitychange", markRead);
+  }, [roomId, latestId]);
 
   const loadOlder = useCallback(async () => {
     const oldest = messages[0];
@@ -108,23 +80,38 @@ export function useRoomMessages(roomId: number, token: string) {
     setIsLoadingOlder(true);
     try {
       const res = await api.listMessages(roomId, oldest.id);
-      setMessages((prev) => mergeMessages(prev, res.messages));
+      applyIncoming(res.messages);
       setHasMore(res.has_more);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "メッセージの取得に失敗しました");
+      setError(toErrorMessage(e, "メッセージの取得に失敗しました"));
     } finally {
       setIsLoadingOlder(false);
     }
-  }, [roomId, messages, isLoadingOlder]);
+  }, [roomId, messages, isLoadingOlder, applyIncoming]);
 
-  /** 送信。WebSocket の到着を待たず、レスポンスで即座に一覧へ反映する。 */
+  // 送信・削除は WebSocket の到着を待たず、レスポンスで即座に反映する（失敗時は例外を呼び出し側へ）
   const send = useCallback(
-    async (content: string) => {
-      const message = await api.postMessage(roomId, content);
-      setMessages((prev) => mergeMessages(prev, [message]));
-    },
-    [roomId],
+    async (content: string) => applyIncoming([await api.postMessage(roomId, content)]),
+    [roomId, applyIncoming],
+  );
+  const sendImage = useCallback(
+    async (file: File) => applyIncoming([await api.postImage(roomId, file)]),
+    [roomId, applyIncoming],
+  );
+  const remove = useCallback(
+    async (messageId: number) => applyIncoming([await api.deleteMessage(roomId, messageId)]),
+    [roomId, applyIncoming],
   );
 
-  return { messages, hasMore, isLoading, isLoadingOlder, error, connection, loadOlder, send };
+  return {
+    messages,
+    hasMore,
+    isLoading,
+    isLoadingOlder,
+    error,
+    loadOlder,
+    send,
+    sendImage,
+    remove,
+  };
 }

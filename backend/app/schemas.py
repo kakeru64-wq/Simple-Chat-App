@@ -3,7 +3,24 @@
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_serializer
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    StringConstraints,
+    computed_field,
+)
+
+
+def _to_utc_iso(value: datetime) -> str:
+    # SQLite はタイムゾーン情報を保持しないため、UTC として明示して返す
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.isoformat()
+
+
+UtcDatetime = Annotated[datetime, PlainSerializer(_to_utc_iso, return_type=str)]
 
 UserName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]
 RoomName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=30)]
@@ -15,13 +32,6 @@ MessageContent = Annotated[
 class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    @field_serializer("created_at", check_fields=False)
-    def _serialize_dt(self, value: datetime) -> str:
-        # SQLite はタイムゾーン情報を保持しないため、UTC として明示して返す
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=UTC)
-        return value.isoformat()
-
 
 # ---- Users / Auth ----
 class LoginRequest(BaseModel):
@@ -31,23 +41,12 @@ class LoginRequest(BaseModel):
 class UserOut(ORMModel):
     id: int
     name: str
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class LoginResponse(BaseModel):
     token: str
     user: UserOut
-
-
-# ---- Rooms ----
-class RoomCreate(BaseModel):
-    name: RoomName
-
-
-class RoomOut(ORMModel):
-    id: int
-    name: str
-    created_at: datetime
 
 
 # ---- Messages ----
@@ -59,8 +58,20 @@ class MessageOut(ORMModel):
     id: int
     room_id: int
     user: UserOut
-    content: str
-    created_at: datetime
+    content: str | None = Field(description="テキスト本文。画像メッセージ・削除済みは null")
+    image_path: str | None = Field(exclude=True)
+    deleted_at: UtcDatetime | None = Field(exclude=True)
+    created_at: UtcDatetime
+
+    @computed_field(description="画像の URL（API サーバーからの相対パス）")
+    @property
+    def image_url(self) -> str | None:
+        return f"/uploads/{self.image_path}" if self.image_path else None
+
+    @computed_field
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
 
 
 class MessageListResponse(BaseModel):
@@ -68,7 +79,28 @@ class MessageListResponse(BaseModel):
     has_more: bool = Field(description="さらに古いメッセージが存在するか")
 
 
+# ---- Rooms ----
+class RoomCreate(BaseModel):
+    name: RoomName
+
+
+class RoomOut(BaseModel):
+    """ルーム情報に、閲覧ユーザーから見た状態（参加・未読・最新メッセージ）を加えたもの。"""
+
+    id: int
+    name: str
+    created_at: UtcDatetime
+    member_count: int
+    is_member: bool
+    unread_count: int = Field(description="未読数（自分の投稿・削除済みは除く）。未参加なら 0")
+    last_message: MessageOut | None = Field(description="削除されていない最新メッセージ")
+
+
+class MarkReadRequest(BaseModel):
+    message_id: int = Field(ge=0, description="ここまで読んだメッセージの ID")
+
+
 # ---- WebSocket events ----
-class MessageCreatedEvent(BaseModel):
-    type: Literal["message.created"] = "message.created"
+class MessageEvent(BaseModel):
+    type: Literal["message.created", "message.deleted"]
     message: MessageOut

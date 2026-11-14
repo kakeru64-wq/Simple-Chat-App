@@ -1,17 +1,13 @@
-"""ルームの作成・取得。"""
+"""ルームの作成・取得と、一覧表示用の集計（参加状態・未読数・最新メッセージ）。"""
 
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import models
+from app import models, schemas
 from app.errors import ConflictError, NotFoundError
-
-
-def list_rooms(db: Session) -> Sequence[models.Room]:
-    return db.scalars(select(models.Room).order_by(models.Room.id)).all()
 
 
 def get_room(db: Session, room_id: int) -> models.Room:
@@ -21,12 +17,20 @@ def get_room(db: Session, room_id: int) -> models.Room:
     return room
 
 
-def create_room(db: Session, name: str) -> models.Room:
-    if db.scalar(select(models.Room).where(models.Room.name == name)) is not None:
+def find_room_by_name(db: Session, name: str) -> models.Room | None:
+    return db.scalar(select(models.Room).where(models.Room.name == name))
+
+
+def create_room(db: Session, name: str, creator: models.User | None = None) -> models.Room:
+    """ルームを作成する。作成者を指定した場合はそのまま参加させる。"""
+    if find_room_by_name(db, name) is not None:
         raise ConflictError(f"Room '{name}' already exists")
     room = models.Room(name=name)
     db.add(room)
     try:
+        db.flush()
+        if creator is not None:
+            db.add(models.RoomMember(room_id=room.id, user_id=creator.id))
         db.commit()
     except IntegrityError as e:  # 事前チェック後に同名ルームが同時作成された場合
         db.rollback()
@@ -36,5 +40,74 @@ def create_room(db: Session, name: str) -> models.Room:
 
 def ensure_room(db: Session, name: str) -> models.Room:
     """存在しなければ作成する（起動時のデフォルトルーム投入用）。"""
-    room = db.scalar(select(models.Room).where(models.Room.name == name))
-    return room if room is not None else create_room(db, name)
+    return find_room_by_name(db, name) or create_room(db, name)
+
+
+def list_room_views(db: Session, user: models.User) -> list[schemas.RoomOut]:
+    """全ルームを、閲覧ユーザーから見た状態付きで、最近動きのあった順に返す。"""
+    rooms = db.scalars(select(models.Room)).all()
+    views = _build_views(db, rooms, user)
+    return sorted(
+        views,
+        key=lambda v: (v.last_message.id if v.last_message else 0, v.id),
+        reverse=True,
+    )
+
+
+def get_room_view(db: Session, room_id: int, user: models.User) -> schemas.RoomOut:
+    return _build_views(db, [get_room(db, room_id)], user)[0]
+
+
+def _build_views(
+    db: Session, rooms: Sequence[models.Room], user: models.User
+) -> list[schemas.RoomOut]:
+    """N+1 にならないよう、集計はルーム横断の GROUP BY でまとめて取得する。"""
+    room_ids = [r.id for r in rooms]
+    if not room_ids:
+        return []
+    M, RM = models.Message, models.RoomMember
+
+    member_counts = dict(
+        db.execute(
+            select(RM.room_id, func.count()).where(RM.room_id.in_(room_ids)).group_by(RM.room_id)
+        ).all()
+    )
+    my_room_ids = set(
+        db.scalars(select(RM.room_id).where(RM.user_id == user.id, RM.room_id.in_(room_ids)))
+    )
+    latest_ids = (
+        select(func.max(M.id))
+        .where(M.room_id.in_(room_ids), M.deleted_at.is_(None))
+        .group_by(M.room_id)
+    )
+    last_messages = {m.room_id: m for m in db.scalars(select(M).where(M.id.in_(latest_ids)))}
+    unread_counts = dict(
+        db.execute(
+            select(M.room_id, func.count())
+            .join(RM, and_(RM.room_id == M.room_id, RM.user_id == user.id))
+            .where(
+                M.room_id.in_(room_ids),
+                M.id > RM.last_read_message_id,
+                M.user_id != user.id,
+                M.deleted_at.is_(None),
+            )
+            .group_by(M.room_id)
+        ).all()
+    )
+
+    return [
+        schemas.RoomOut(
+            id=room.id,
+            name=room.name,
+            created_at=room.created_at,
+            member_count=member_counts.get(room.id, 0),
+            is_member=room.id in my_room_ids,
+            unread_count=unread_counts.get(room.id, 0),
+            last_message=(
+                schemas.MessageOut.model_validate(last_messages[room.id])
+                if room.id in last_messages
+                else None
+            ),
+        )
+        for room in rooms
+    ]
