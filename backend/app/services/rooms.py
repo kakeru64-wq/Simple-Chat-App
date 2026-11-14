@@ -38,23 +38,34 @@ def create_room(db: Session, name: str, creator: models.User | None = None) -> m
     return room
 
 
-def rename_room(db: Session, room_id: int, user: models.User, name: str) -> models.Room:
-    """ルーム名を変更する。参加者なら誰でも変更できる（LINE のグループと同じ）。"""
+def rename_room(
+    db: Session, room_id: int, user: models.User, name: str
+) -> tuple[models.Room, models.Message | None]:
+    """ルーム名を変更する。参加者なら誰でも変更できる（LINE のグループと同じ）。
+
+    変更した場合は「〇〇がトーク名を変更しました」のシステムメッセージを同じトランザクションで
+    記録し、(ルーム, システムメッセージ) を返す。名前が同じなら何もせずメッセージは None。
+    """
     room = get_room(db, room_id)
     if db.get(models.RoomMember, (room_id, user.id)) is None:
         raise ForbiddenError("You are not a member of this room")
     if room.name == name:
-        return room
-    existing = find_room_by_name(db, name)
-    if existing is not None:
+        return room, None
+    if find_room_by_name(db, name) is not None:
         raise ConflictError(f"Room '{name}' already exists")
+
     room.name = name
+    notice = models.Message(
+        room_id=room_id, user_id=user.id, kind=models.MessageKind.ROOM_RENAMED, content=name
+    )
+    db.add(notice)
     try:
         db.commit()
     except IntegrityError as e:  # 事前チェック後に同名ルームが同時に作られた場合
         db.rollback()
         raise ConflictError(f"Room '{name}' already exists") from e
-    return room
+    db.refresh(notice)
+    return room, notice
 
 
 def list_room_views(
@@ -122,6 +133,7 @@ def _build_views(
                 M.id > RM.last_read_message_id,
                 M.user_id != user.id,
                 M.deleted_at.is_(None),
+                M.kind.in_(models.USER_MESSAGE_KINDS),  # システムメッセージは未読に数えない
             )
             .group_by(M.room_id)
         ).all()

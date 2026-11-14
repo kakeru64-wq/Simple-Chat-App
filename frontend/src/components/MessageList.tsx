@@ -112,6 +112,7 @@ export function MessageList({
               <MessageBubble
                 message={message}
                 isMine={isMine}
+                myUserId={myUserId}
                 onDelete={isMine ? onDelete : undefined}
                 onImageLoad={handleImageLoad}
               />

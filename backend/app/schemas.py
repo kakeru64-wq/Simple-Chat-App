@@ -57,8 +57,11 @@ class MessageCreate(BaseModel):
 class MessageOut(ORMModel):
     id: int
     room_id: int
-    user: UserOut
-    content: str | None = Field(description="テキスト本文。画像メッセージ・削除済みは null")
+    user: UserOut = Field(description="投稿者（システムメッセージでは操作したユーザー）")
+    kind: Literal["text", "image", "room_renamed"]
+    content: str | None = Field(
+        description="テキスト本文（room_renamed では変更後のトーク名）。画像・削除済みは null"
+    )
     image_path: str | None = Field(exclude=True)
     deleted_at: UtcDatetime | None = Field(exclude=True)
     created_at: UtcDatetime

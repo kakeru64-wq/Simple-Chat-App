@@ -6,11 +6,19 @@ export type User = {
   created_at: string;
 };
 
+/**
+ * メッセージの種類。text / image はユーザーの投稿、それ以外はシステムメッセージ（操作の記録）。
+ * - room_renamed: トーク名の変更（content に変更後の名前、user は変更した人）
+ */
+export type MessageKind = "text" | "image" | "room_renamed";
+
 export type Message = {
   id: number;
   room_id: number;
+  /** 投稿者（システムメッセージでは操作したユーザー） */
   user: User;
-  /** テキスト本文。画像メッセージ・削除済みは null */
+  kind: MessageKind;
+  /** テキスト本文（room_renamed では変更後のトーク名）。画像・削除済みは null */
   content: string | null;
   /** API サーバーからの相対パス。画像でなければ null */
   image_url: string | null;

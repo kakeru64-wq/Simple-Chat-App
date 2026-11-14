@@ -7,35 +7,16 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import inspect
 
-from app import storage
+from app import migrations, storage
 from app.config import get_settings
-from app.db import Base, engine
+from app.db import engine
 from app.errors import AppError
 from app.routers import auth, messages, rooms, ws
 
 
 def init_db() -> None:
-    _check_schema_is_current()
-    Base.metadata.create_all(bind=engine)
-
-
-def _check_schema_is_current() -> None:
-    """create_all は既存テーブルに列を追加しないため、古い DB なら分かりやすく停止する。
-
-    本格運用ではマイグレーションツール（Alembic）で対応する。
-    """
-    inspector = inspect(engine)
-    if not inspector.has_table("messages"):
-        return
-    existing = {c["name"] for c in inspector.get_columns("messages")}
-    missing = {c.name for c in Base.metadata.tables["messages"].columns} - existing
-    if missing:
-        raise RuntimeError(
-            f"Database schema is outdated (messages is missing: {', '.join(sorted(missing))}). "
-            "Delete the database file (e.g. backend/chat.db) and restart."
-        )
+    migrations.upgrade(engine)
 
 
 @asynccontextmanager

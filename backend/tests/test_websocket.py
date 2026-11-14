@@ -63,5 +63,10 @@ def test_websocket_rejects_invalid_token(client):
 def test_rename_is_sent_to_members(client, alice, bob, room_id):
     with client.websocket_connect(f"/ws?token={_token(bob)}") as ws:
         client.patch(f"/api/rooms/{room_id}", json={"name": "renamed"}, headers=alice)
-        event = ws.receive_json()
-    assert event == {"type": "room.updated", "room": {"id": room_id, "name": "renamed"}}
+        updated = ws.receive_json()
+        notice = ws.receive_json()
+    assert updated == {"type": "room.updated", "room": {"id": room_id, "name": "renamed"}}
+    assert notice["type"] == "message.created"
+    assert notice["message"]["kind"] == "room_renamed"
+    assert notice["message"]["content"] == "renamed"
+    assert notice["message"]["user"]["name"] == "alice"

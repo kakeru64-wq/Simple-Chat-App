@@ -29,11 +29,31 @@ export function formatListTime(iso: string, now: Date = new Date()): string {
   return shortDateFormatter.format(date);
 }
 
+/** ユーザーの投稿か（false ならシステムメッセージ） */
+export function isUserMessage(message: Message): boolean {
+  return message.kind === "text" || message.kind === "image";
+}
+
+function actorName(message: Message, myUserId: number): string {
+  return message.user.id === myUserId ? "あなた" : message.user.name;
+}
+
+/** システムメッセージの表示文（トーク内・トーク一覧で共通） */
+export function systemMessageText(message: Message, myUserId: number): string {
+  switch (message.kind) {
+    case "room_renamed":
+      return `${actorName(message, myUserId)}がトーク名を「${message.content ?? ""}」に変更しました`;
+    default:
+      return "";
+  }
+}
+
 /** トーク一覧に表示する最新メッセージのプレビュー */
 export function previewText(message: Message, myUserId: number): string {
-  const sender = message.user.id === myUserId ? "あなた" : message.user.name;
+  const sender = actorName(message, myUserId);
+  if (!isUserMessage(message)) return systemMessageText(message, myUserId);
   if (message.is_deleted) return `${sender}がメッセージの送信を取り消しました`;
-  if (message.image_url) return `${sender}が画像を送信しました`;
+  if (message.kind === "image") return `${sender}が画像を送信しました`;
   return `${sender}: ${message.content ?? ""}`;
 }
 

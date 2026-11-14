@@ -6,6 +6,7 @@ PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 def test_post_and_list_messages(client, alice, bob, room_id):
     first = post(client, alice, room_id, "hi")
     assert first["user"]["name"] == "alice"
+    assert first["kind"] == "text"
     assert first["image_url"] is None
     assert first["is_deleted"] is False
     post(client, bob, room_id, "hello")
@@ -99,6 +100,7 @@ def test_upload_image_and_fetch_it(client, alice, room_id):
     res = _upload(client, alice, room_id, PNG_BYTES)
     assert res.status_code == 201
     body = res.json()
+    assert body["kind"] == "image"
     assert body["content"] is None
     assert body["image_url"].startswith("/uploads/") and body["image_url"].endswith(".png")
 

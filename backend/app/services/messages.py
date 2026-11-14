@@ -34,7 +34,12 @@ def create_text_message(
     db: Session, room_id: int, user: models.User, content: str
 ) -> models.Message:
     require_member(db, room_id, user)
-    return _save(db, models.Message(room_id=room_id, user_id=user.id, content=content))
+    return _save(
+        db,
+        models.Message(
+            room_id=room_id, user_id=user.id, kind=models.MessageKind.TEXT, content=content
+        ),
+    )
 
 
 def create_image_message(
@@ -43,7 +48,15 @@ def create_image_message(
     require_member(db, room_id, user)
     filename = storage.save_image(data)  # 形式・サイズ不正ならここで例外
     try:
-        return _save(db, models.Message(room_id=room_id, user_id=user.id, image_path=filename))
+        return _save(
+            db,
+            models.Message(
+                room_id=room_id,
+                user_id=user.id,
+                kind=models.MessageKind.IMAGE,
+                image_path=filename,
+            ),
+        )
     except Exception:
         storage.delete_image(filename)  # DB 保存に失敗したらファイルも残さない
         raise
@@ -55,6 +68,8 @@ def delete_message(db: Session, room_id: int, message_id: int, user: models.User
     message = db.get(models.Message, message_id)
     if message is None or message.room_id != room_id:
         raise NotFoundError(f"Message {message_id} not found")
+    if message.kind not in models.USER_MESSAGE_KINDS:
+        raise ForbiddenError("System messages cannot be deleted")
     if message.user_id != user.id:
         raise ForbiddenError("You can only delete your own messages")
     if message.deleted_at is not None:

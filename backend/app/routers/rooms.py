@@ -45,10 +45,19 @@ def rename_room(
     background_tasks: BackgroundTasks,
 ):
     """ルーム名を変更する（参加者のみ。同名のルームがあれば 409）。参加者全員へ配信する。"""
-    room = room_service.rename_room(db, room_id, user, body.name)
-    event = schemas.RoomUpdatedEvent(room=schemas.RoomRef.model_validate(room))
-    member_ids = membership_service.list_member_ids(db, room_id)
-    background_tasks.add_task(manager.send_to_users, member_ids, event.model_dump(mode="json"))
+    room, notice = room_service.rename_room(db, room_id, user, body.name)
+    if notice is not None:
+        member_ids = membership_service.list_member_ids(db, room_id)
+        events = [
+            schemas.RoomUpdatedEvent(room=schemas.RoomRef.model_validate(room)),
+            schemas.MessageEvent(
+                type="message.created", message=schemas.MessageOut.model_validate(notice)
+            ),
+        ]
+        for event in events:
+            background_tasks.add_task(
+                manager.send_to_users, member_ids, event.model_dump(mode="json")
+            )
     return room_service.get_room_view(db, room_id, user)
 
 

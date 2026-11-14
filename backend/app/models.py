@@ -1,6 +1,7 @@
 """SQLAlchemy モデル（テーブル定義）。"""
 
 from datetime import UTC, datetime
+from enum import StrEnum
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -55,8 +56,22 @@ class RoomMember(Base):
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class MessageKind(StrEnum):
+    TEXT = "text"
+    IMAGE = "image"
+    # 以下はシステムメッセージ（操作の記録）。user_id は操作したユーザー
+    ROOM_RENAMED = "room_renamed"  # content に変更後のトーク名
+
+
+# ユーザーが投稿したメッセージの種類（未読数の対象・取り消し可能）
+USER_MESSAGE_KINDS = (MessageKind.TEXT, MessageKind.IMAGE)
+
+
 class Message(Base):
-    """テキストまたは画像のメッセージ。削除は論理削除（deleted_at）で、本文と画像は消去する。"""
+    """メッセージ。テキスト・画像のほか、トーク名変更などのシステムメッセージも含む。
+
+    削除は論理削除（deleted_at）で、本文と画像は消去する。
+    """
 
     __tablename__ = "messages"
     # ルーム内のメッセージを id 順にページングするための複合インデックス
@@ -65,6 +80,7 @@ class Message(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(20), default=MessageKind.TEXT)
     content: Mapped[str | None] = mapped_column(Text)
     # uploads ディレクトリ内のファイル名
     image_path: Mapped[str | None] = mapped_column(String(100))
