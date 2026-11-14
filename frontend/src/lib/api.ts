@@ -86,7 +86,9 @@ export const api = {
   me: () => request<User>("/api/auth/me"),
   logout: () => request<void>("/api/auth/logout", { method: "POST" }),
 
-  listRooms: () => request<Room[]>("/api/rooms"),
+  /** query を指定するとルーム名で部分一致検索する */
+  listRooms: (query?: string) =>
+    request<Room[]>(query ? `/api/rooms?${new URLSearchParams({ q: query })}` : "/api/rooms"),
   getRoom: (roomId: number) => request<Room>(`/api/rooms/${roomId}`),
   createRoom: (name: string) => request<Room>("/api/rooms", { method: "POST", body: { name } }),
   joinRoom: (roomId: number) => request<Room>(`/api/rooms/${roomId}/members/me`, { method: "PUT" }),

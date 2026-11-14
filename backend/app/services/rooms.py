@@ -38,15 +38,33 @@ def create_room(db: Session, name: str, creator: models.User | None = None) -> m
     return room
 
 
-def list_room_views(db: Session, user: models.User) -> list[schemas.RoomOut]:
-    """全ルームを、閲覧ユーザーから見た状態付きで、最近動きのあった順に返す。"""
-    rooms = db.scalars(select(models.Room)).all()
+def list_room_views(
+    db: Session, user: models.User, *, query: str | None = None
+) -> list[schemas.RoomOut]:
+    """ルームを、閲覧ユーザーから見た状態付きで、最近動きのあった順に返す。
+
+    query を指定すると、ルーム名の部分一致（大文字小文字を区別しない）で絞り込む。
+    """
+    stmt = select(models.Room)
+    if query:
+        stmt = stmt.where(models.Room.name.ilike(f"%{_escape_like(query)}%", escape=_LIKE_ESCAPE))
+    rooms = db.scalars(stmt).all()
     views = _build_views(db, rooms, user)
     return sorted(
         views,
         key=lambda v: (v.last_message.id if v.last_message else 0, v.id),
         reverse=True,
     )
+
+
+_LIKE_ESCAPE = "\\"
+
+
+def _escape_like(text: str) -> str:
+    """LIKE のワイルドカード（% と _）を通常の文字として扱うためにエスケープする。"""
+    for char in (_LIKE_ESCAPE, "%", "_"):  # エスケープ文字自体を最初に処理する
+        text = text.replace(char, _LIKE_ESCAPE + char)
+    return text
 
 
 def get_room_view(db: Session, room_id: int, user: models.User) -> schemas.RoomOut:

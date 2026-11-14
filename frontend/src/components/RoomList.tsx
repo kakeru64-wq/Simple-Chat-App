@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { formatListTime, formatUnread, previewText } from "@/lib/format";
 import type { Room } from "@/lib/types";
@@ -12,13 +13,24 @@ function RoomIcon() {
 }
 
 /** 参加中のトーク一覧（LINE のトーク一覧風：最新メッセージと未読数を表示） */
-export function JoinedRoomList({ rooms, myUserId }: { rooms: Room[]; myUserId: number }) {
+type JoinedProps = {
+  rooms: Room[];
+  myUserId: number;
+  /** 0 件のときの表示（検索中など）。省略時は既定の案内 */
+  emptyMessage?: ReactNode;
+};
+
+export function JoinedRoomList({ rooms, myUserId, emptyMessage }: JoinedProps) {
   if (rooms.length === 0) {
     return (
       <p className="px-4 py-8 text-center text-sm text-gray-500">
-        参加中のルームはありません。
-        <br />
-        上のフォームから作成するか、下の一覧から参加してください。
+        {emptyMessage ?? (
+          <>
+            参加中のルームはありません。
+            <br />
+            上のフォームから作成するか、下の一覧から参加してください。
+          </>
+        )}
       </p>
     );
   }
@@ -66,12 +78,17 @@ type AvailableProps = {
   rooms: Room[];
   joiningId: number | null;
   onJoin: (room: Room) => void;
+  emptyMessage?: ReactNode;
 };
 
 /** 未参加のルーム一覧（参加ボタン付き） */
-export function AvailableRoomList({ rooms, joiningId, onJoin }: AvailableProps) {
+export function AvailableRoomList({ rooms, joiningId, onJoin, emptyMessage }: AvailableProps) {
   if (rooms.length === 0) {
-    return <p className="py-6 text-center text-sm text-gray-500">参加できるルームはありません</p>;
+    return (
+      <p className="px-4 py-6 text-center text-sm text-gray-500">
+        {emptyMessage ?? "参加できるルームはありません"}
+      </p>
+    );
   }
   return (
     <ul className="divide-y divide-gray-100">

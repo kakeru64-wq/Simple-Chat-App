@@ -1,15 +1,19 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppHeader } from "@/components/AppHeader";
 import { useAuthedSession } from "@/components/AuthenticatedShell";
 import { CreateRoomForm } from "@/components/CreateRoomForm";
 import { useRealtimeEvent } from "@/components/RealtimeProvider";
 import { AvailableRoomList, JoinedRoomList } from "@/components/RoomList";
+import { RoomSearchBox } from "@/components/RoomSearchBox";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { ApiError, api } from "@/lib/api";
 import type { Room } from "@/lib/types";
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 /** ルーム一覧画面：参加中のトーク（最新メッセージ・未読数）と、参加できるルーム。 */
 export function RoomsView() {
@@ -18,16 +22,22 @@ export function RoomsView() {
   const [rooms, setRooms] = useState<Room[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [joiningId, setJoiningId] = useState<number | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const query = useDebouncedValue(searchInput.trim(), SEARCH_DEBOUNCE_MS);
+  // 入力中に連続で検索したとき、古いレスポンスで新しい結果を上書きしないための連番
+  const latestRequestRef = useRef(0);
 
   const reload = useCallback(() => {
+    const requestId = ++latestRequestRef.current;
     api
-      .listRooms()
+      .listRooms(query)
       .then((data) => {
+        if (requestId !== latestRequestRef.current) return;
         setRooms(data);
         setError(null);
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : "ルーム一覧の取得に失敗しました"));
-  }, []);
+  }, [query]);
 
   useEffect(reload, [reload]);
 
@@ -56,6 +66,8 @@ export function RoomsView() {
           <CreateRoomForm onCreated={(room) => router.push(`/rooms/${room.id}`)} />
         </section>
 
+        <RoomSearchBox value={searchInput} onChange={setSearchInput} />
+
         {error && (
           <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
             {error}
@@ -67,16 +79,29 @@ export function RoomsView() {
         ) : (
           <>
             <RoomSection title="参加中のトーク">
-              <JoinedRoomList rooms={joined} myUserId={session.user.id} />
+              <JoinedRoomList
+                rooms={joined}
+                myUserId={session.user.id}
+                emptyMessage={query ? noMatchMessage(query) : undefined}
+              />
             </RoomSection>
             <RoomSection title="参加できるルーム">
-              <AvailableRoomList rooms={available} joiningId={joiningId} onJoin={join} />
+              <AvailableRoomList
+                rooms={available}
+                joiningId={joiningId}
+                onJoin={join}
+                emptyMessage={query ? noMatchMessage(query) : undefined}
+              />
             </RoomSection>
           </>
         )}
       </main>
     </div>
   );
+}
+
+function noMatchMessage(query: string): string {
+  return `「${query}」に一致するルームはありません`;
 }
 
 function RoomSection({ title, children }: { title: string; children: React.ReactNode }) {

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, status
+from typing import Annotated
+
+from fastapi import APIRouter, Query, status
 
 from app import schemas
 from app.deps import CurrentUser, DbSession
@@ -9,9 +11,16 @@ router = APIRouter(prefix="/api/rooms", tags=["rooms"])
 
 
 @router.get("", response_model=list[schemas.RoomOut])
-def list_rooms(db: DbSession, user: CurrentUser):
-    """全ルームを、参加状態・未読数・最新メッセージ付きで、最近動きのあった順に返す。"""
-    return room_service.list_room_views(db, user)
+def list_rooms(
+    db: DbSession,
+    user: CurrentUser,
+    q: Annotated[
+        str | None,
+        Query(max_length=30, description="ルーム名の部分一致検索（大小文字を区別しない）"),
+    ] = None,
+):
+    """ルームを、参加状態・未読数・最新メッセージ付きで、最近動きのあった順に返す。"""
+    return room_service.list_room_views(db, user, query=(q or "").strip() or None)
 
 
 @router.post("", response_model=schemas.RoomOut, status_code=status.HTTP_201_CREATED)
