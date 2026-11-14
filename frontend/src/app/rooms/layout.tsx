@@ -1,6 +1,11 @@
-import { AuthenticatedShell } from "@/components/AuthenticatedShell";
+import { SessionGuard } from "@/features/auth/SessionGuard";
+import { RealtimeProvider } from "@/features/realtime/RealtimeProvider";
 
-/** /rooms 配下はログイン必須。WebSocket 接続は画面遷移をまたいで共有する。 */
+/** /rooms 配下はログイン必須。WebSocket の接続は画面を移動しても共有する。 */
 export default function RoomsLayout({ children }: LayoutProps<"/rooms">) {
-  return <AuthenticatedShell>{children}</AuthenticatedShell>;
+  return (
+    <SessionGuard>
+      <RealtimeProvider>{children}</RealtimeProvider>
+    </SessionGuard>
+  );
 }

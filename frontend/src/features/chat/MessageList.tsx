@@ -2,9 +2,12 @@
 
 import { Fragment, useLayoutEffect, useRef } from "react";
 
-import { MessageBubble } from "@/components/MessageBubble";
-import { formatDate, isNewDay } from "@/lib/format";
+import { formatDate, isSameDay } from "@/lib/datetime";
+import { noticeText } from "@/lib/messages";
 import type { Message } from "@/lib/types";
+
+import { MessageBubble } from "./MessageBubble";
+import { SystemNotice } from "./SystemNotice";
 
 type Props = {
   messages: Message[];
@@ -18,6 +21,12 @@ type Props = {
 /** 下端から何 px 以内なら「最下部を見ている」とみなすか */
 const BOTTOM_THRESHOLD_PX = 80;
 
+/**
+ * メッセージ一覧。スクロールは次のように振る舞う：
+ * - 最下部を見ているとき、または自分が送信したときは、新着で最下部へ移動
+ * - 上にスクロールして過去ログを読んでいるときは、新着が来ても位置を動かさない
+ * - 過去ログを読み込んだときは、見ていた位置を保つ
+ */
 export function MessageList({
   messages,
   myUserId,
@@ -29,7 +38,7 @@ export function MessageList({
   const containerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const lastMessageIdRef = useRef<number | undefined>(undefined);
-  // 過去ログ読み込み前のスクロール位置（読み込み後に見ていた位置を維持するため）
+  // 過去ログ読み込み前のスクロール位置（読み込み後に同じ位置を見せるため）
   const prependAnchorRef = useRef<{ height: number; top: number } | null>(null);
 
   const scrollToBottom = () => {
@@ -51,7 +60,6 @@ export function MessageList({
     const last = messages.at(-1);
     const hasNewMessage = last !== undefined && last.id !== lastMessageIdRef.current;
     lastMessageIdRef.current = last?.id;
-    // 最下部を見ているとき、または自分が送信したときだけ自動スクロールする
     if (hasNewMessage && (isAtBottomRef.current || last.user.id === myUserId)) {
       scrollToBottom();
       isAtBottomRef.current = true;
@@ -64,7 +72,7 @@ export function MessageList({
     isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_THRESHOLD_PX;
   };
 
-  // 画像は読み込み後に高さが決まるため、最下部を見ていたら追従する
+  // 画像は読み込み後に高さが決まるので、最下部を見ていたら追従する
   const handleImageLoad = () => {
     if (isAtBottomRef.current) scrollToBottom();
   };
@@ -79,7 +87,7 @@ export function MessageList({
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto bg-[#8CABD9] px-3 py-4"
+      className="flex-1 overflow-y-auto bg-chat px-3 py-4"
       aria-live="polite"
     >
       <div className="mx-auto flex max-w-3xl flex-col gap-3">
@@ -101,21 +109,24 @@ export function MessageList({
         )}
 
         {messages.map((message, i) => {
+          const prev = messages[i - 1];
           const isMine = message.user.id === myUserId;
+          const notice = noticeText(message, myUserId);
           return (
             <Fragment key={message.id}>
-              {isNewDay(messages[i - 1], message) && (
-                <div className="self-center rounded-full bg-black/15 px-3 py-0.5 text-xs text-white">
-                  {formatDate(message.created_at)}
-                </div>
+              {(!prev || !isSameDay(prev.created_at, message.created_at)) && (
+                <SystemNotice>{formatDate(message.created_at)}</SystemNotice>
               )}
-              <MessageBubble
-                message={message}
-                isMine={isMine}
-                myUserId={myUserId}
-                onDelete={isMine ? onDelete : undefined}
-                onImageLoad={handleImageLoad}
-              />
+              {notice ? (
+                <SystemNotice>{notice}</SystemNotice>
+              ) : (
+                <MessageBubble
+                  message={message}
+                  isMine={isMine}
+                  onDelete={isMine ? onDelete : undefined}
+                  onImageLoad={handleImageLoad}
+                />
+              )}
             </Fragment>
           );
         })}

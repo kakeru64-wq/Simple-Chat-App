@@ -30,7 +30,7 @@ export function RoomSearchBox({ value, onChange }: Props) {
         maxLength={LIMITS.roomName}
         placeholder="ルーム名で検索"
         aria-label="ルーム名で検索"
-        className="w-full rounded-full bg-gray-100 py-2 pr-9 pl-9 text-sm outline-none focus:ring-2 focus:ring-[#06C755]/30 [&::-webkit-search-cancel-button]:hidden"
+        className="w-full rounded-full bg-gray-100 py-2 pr-9 pl-9 text-sm outline-none focus:ring-2 focus:ring-brand/30 [&::-webkit-search-cancel-button]:hidden"
       />
       {value && (
         <button

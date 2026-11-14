@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { RoomsView } from "@/components/RoomsView";
+import { RoomsScreen } from "@/features/rooms/RoomsScreen";
 
-export const metadata: Metadata = { title: "ルーム一覧 | Simple Chat" };
+export const metadata: Metadata = { title: "トーク | Simple Chat" };
 
 export default function RoomsPage() {
-  return <RoomsView />;
+  return <RoomsScreen />;
 }
