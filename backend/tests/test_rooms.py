@@ -5,9 +5,8 @@ def _room(client, headers, room_id) -> dict:
     return client.get(f"/api/rooms/{room_id}", headers=headers).json()
 
 
-def test_new_user_joins_default_room(client, alice):
-    rooms = client.get("/api/rooms", headers=alice).json()
-    assert [(r["name"], r["is_member"]) for r in rooms] == [("General", True)]
+def test_no_rooms_initially(client, alice):
+    assert client.get("/api/rooms", headers=alice).json() == []
 
 
 def test_rooms_require_auth(client):
@@ -22,26 +21,27 @@ def test_create_room_makes_creator_a_member(client, alice, bob):
 
 
 def test_create_duplicate_room_conflicts(client, alice):
-    assert client.post("/api/rooms", json={"name": "General"}, headers=alice).status_code == 409
+    create_room(client, alice, "dup")
+    assert client.post("/api/rooms", json={"name": "dup"}, headers=alice).status_code == 409
 
 
 def test_get_unknown_room_returns_404(client, alice):
     assert client.get("/api/rooms/9999", headers=alice).status_code == 404
 
 
-def test_room_list_shows_last_message_and_sorts_by_activity(client, alice, general_id):
+def test_room_list_shows_last_message_and_sorts_by_activity(client, alice, room_id):
     other = create_room(client, alice, "other")
-    post(client, alice, general_id, "older")
+    post(client, alice, room_id, "older")
     post(client, alice, other, "newer")
 
     rooms = client.get("/api/rooms", headers=alice).json()
-    assert [r["name"] for r in rooms] == ["other", "General"]
+    assert [r["name"] for r in rooms] == ["other", "lobby"]
     assert rooms[0]["last_message"]["content"] == "newer"
     assert rooms[1]["last_message"]["content"] == "older"
 
 
-def test_last_message_skips_deleted(client, alice, general_id):
-    post(client, alice, general_id, "keep")
-    latest = post(client, alice, general_id, "remove")
-    client.delete(f"/api/rooms/{general_id}/messages/{latest['id']}", headers=alice)
-    assert _room(client, alice, general_id)["last_message"]["content"] == "keep"
+def test_last_message_skips_deleted(client, alice, room_id):
+    post(client, alice, room_id, "keep")
+    latest = post(client, alice, room_id, "remove")
+    client.delete(f"/api/rooms/{room_id}/messages/{latest['id']}", headers=alice)
+    assert _room(client, alice, room_id)["last_message"]["content"] == "keep"

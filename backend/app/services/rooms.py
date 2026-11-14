@@ -38,11 +38,6 @@ def create_room(db: Session, name: str, creator: models.User | None = None) -> m
     return room
 
 
-def ensure_room(db: Session, name: str) -> models.Room:
-    """存在しなければ作成する（起動時のデフォルトルーム投入用）。"""
-    return find_room_by_name(db, name) or create_room(db, name)
-
-
 def list_room_views(db: Session, user: models.User) -> list[schemas.RoomOut]:
     """全ルームを、閲覧ユーザーから見た状態付きで、最近動きのあった順に返す。"""
     rooms = db.scalars(select(models.Room)).all()

@@ -11,17 +11,14 @@ from sqlalchemy import inspect
 
 from app import storage
 from app.config import get_settings
-from app.db import Base, SessionLocal, engine
+from app.db import Base, engine
 from app.errors import AppError
 from app.routers import auth, messages, rooms, ws
-from app.services.rooms import ensure_room
 
 
 def init_db() -> None:
     _check_schema_is_current()
     Base.metadata.create_all(bind=engine)
-    with SessionLocal() as db:
-        ensure_room(db, get_settings().default_room_name)
 
 
 def _check_schema_is_current() -> None:

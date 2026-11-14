@@ -41,9 +41,11 @@ def bob(client: TestClient) -> dict[str, str]:
 
 
 @pytest.fixture
-def general_id(client: TestClient, alice: dict[str, str]) -> int:
-    rooms = client.get("/api/rooms", headers=alice).json()
-    return next(r["id"] for r in rooms if r["name"] == "General")
+def room_id(client: TestClient, alice: dict[str, str], bob: dict[str, str]) -> int:
+    """alice が作成し、bob も参加しているルーム。"""
+    room_id = create_room(client, alice, "lobby")
+    assert client.put(f"/api/rooms/{room_id}/members/me", headers=bob).status_code == 200
+    return room_id
 
 
 def create_room(client: TestClient, headers: dict[str, str], name: str) -> int:
