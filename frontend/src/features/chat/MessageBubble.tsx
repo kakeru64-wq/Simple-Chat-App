@@ -30,7 +30,7 @@ export function MessageBubble({ message, isMine, onDelete, onImageLoad }: Props)
     ) : (
       <p
         className={`max-w-[70vw] rounded-2xl px-3 py-2 text-[15px] leading-relaxed break-words whitespace-pre-wrap sm:max-w-md ${
-          isMine ? "rounded-tr-sm bg-bubble-mine" : "rounded-tl-sm bg-white"
+          isMine ? "rounded-tr-sm bg-[#8DE055]" : "rounded-tl-sm bg-white"
         }`}
       >
         {message.content}

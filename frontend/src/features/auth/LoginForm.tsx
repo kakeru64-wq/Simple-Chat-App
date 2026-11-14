@@ -44,7 +44,7 @@ export function LoginForm() {
           placeholder="例：taro"
           autoFocus
           autoComplete="username"
-          className="rounded-md border border-gray-300 px-3 py-2.5 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+          className="rounded-md border border-gray-300 px-3 py-2.5 outline-none focus:border-[#06C755] focus:ring-2 focus:ring-[#06C755]/30"
         />
         <span className="text-xs text-gray-500">
           {LIMITS.userName}文字以内。初めての名前なら自動で登録されます。
@@ -57,7 +57,7 @@ export function LoginForm() {
         type="submit"
         variant="primary"
         disabled={!trimmed || isPending}
-        className="rounded-md py-2.5"
+        className="rounded-md py-2.5 transition disabled:cursor-not-allowed"
       >
         {isPending ? "入室中..." : "入室する"}
       </Button>

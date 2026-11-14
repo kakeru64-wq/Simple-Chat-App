@@ -37,7 +37,7 @@ export function AvailableRoomList({ rooms, joiningId, onJoin, emptyMessage }: Pr
             variant="outline"
             onClick={() => onJoin(room)}
             disabled={joiningId !== null}
-            className="rounded-full px-4 py-1 text-sm"
+            className="shrink-0 rounded-full px-4 py-1 text-sm"
           >
             {joiningId === room.id ? "参加中..." : "参加"}
           </Button>

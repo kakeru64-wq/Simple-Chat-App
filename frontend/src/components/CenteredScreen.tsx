@@ -17,7 +17,7 @@ export function CenteredScreen({ title, children }: { title: string; children: R
 
 export function BackToRoomsLink() {
   return (
-    <Link href="/rooms" className="text-sm text-brand underline">
+    <Link href="/rooms" className="text-sm text-[#06C755] underline">
       トーク一覧へ戻る
     </Link>
   );

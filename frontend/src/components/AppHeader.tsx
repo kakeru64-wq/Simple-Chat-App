@@ -25,7 +25,7 @@ export function AppHeader({ title, backHref, userName, actions }: Props) {
   };
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 bg-header px-4 text-white">
+    <header className="flex h-14 shrink-0 items-center gap-3 bg-[#273246] px-4 text-white">
       {backHref && (
         <Link href={backHref} aria-label="戻る" className="-ml-1 px-1 text-2xl leading-none">
           ‹

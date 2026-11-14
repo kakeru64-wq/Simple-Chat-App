@@ -34,13 +34,13 @@ export function CreateRoomForm({ onCreated }: { onCreated: (room: Room) => void 
           maxLength={LIMITS.roomName}
           placeholder="新しいルーム名"
           aria-label="新しいルーム名"
-          className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+          className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 outline-none focus:border-[#06C755] focus:ring-2 focus:ring-[#06C755]/30"
         />
         <Button
           type="submit"
           variant="primary"
           disabled={!trimmed || isPending}
-          className="rounded-md px-4 text-sm"
+          className="rounded-md px-4 text-sm disabled:cursor-not-allowed"
         >
           作成
         </Button>

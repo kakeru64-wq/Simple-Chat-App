@@ -87,7 +87,7 @@ export function MessageList({
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto bg-chat px-3 py-4"
+      className="flex-1 overflow-y-auto bg-[#8CABD9] px-3 py-4"
       aria-live="polite"
     >
       <div className="mx-auto flex max-w-3xl flex-col gap-3">
@@ -115,7 +115,9 @@ export function MessageList({
           return (
             <Fragment key={message.id}>
               {(!prev || !isSameDay(prev.created_at, message.created_at)) && (
-                <SystemNotice>{formatDate(message.created_at)}</SystemNotice>
+                <div className="self-center rounded-full bg-black/15 px-3 py-0.5 text-xs text-white">
+                  {formatDate(message.created_at)}
+                </div>
               )}
               {notice ? (
                 <SystemNotice>{notice}</SystemNotice>

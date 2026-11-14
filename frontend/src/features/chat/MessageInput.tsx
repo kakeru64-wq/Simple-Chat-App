@@ -2,7 +2,6 @@
 
 import { type ChangeEvent, type FormEvent, type KeyboardEvent, useRef, useState } from "react";
 
-import { Button } from "@/components/Button";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { ACCEPTED_IMAGE_TYPES, LIMITS } from "@/lib/config";
@@ -90,16 +89,15 @@ export function MessageInput({ onSendText, onSendImage, disabled = false }: Prop
           rows={1}
           placeholder="メッセージを入力（Shift+Enterで改行）"
           aria-label="メッセージ"
-          className="field-sizing-content max-h-32 min-h-10 flex-1 resize-none rounded-2xl bg-gray-100 px-4 py-2 outline-none focus:ring-2 focus:ring-brand/30"
+          className="field-sizing-content max-h-32 min-h-10 flex-1 resize-none rounded-2xl bg-gray-100 px-4 py-2 outline-none focus:ring-2 focus:ring-[#06C755]/30"
         />
-        <Button
+        <button
           type="submit"
-          variant="primary"
           disabled={!trimmed || isBusy}
-          className="h-10 rounded-full px-4 text-sm"
+          className="h-10 shrink-0 rounded-full bg-[#06C755] px-4 text-sm font-bold text-white hover:bg-[#05b14c] disabled:cursor-not-allowed disabled:opacity-40"
         >
           {isPending ? "送信中" : "送信"}
-        </Button>
+        </button>
       </div>
     </form>
   );

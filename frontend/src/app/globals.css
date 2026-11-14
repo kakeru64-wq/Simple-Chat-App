@@ -1,14 +1,5 @@
 @import "tailwindcss";
 
-/* アプリの配色（LINE 風）。`bg-brand` `text-header` のようにユーティリティとして使える */
-@theme {
-  --color-brand: #06c755; /* ボタン・バッジ */
-  --color-brand-dark: #05b14c; /* ボタンのホバー */
-  --color-header: #273246; /* ヘッダー・ログイン画面の背景 */
-  --color-chat: #8cabd9; /* トーク画面の背景 */
-  --color-bubble-mine: #8de055; /* 自分の吹き出し */
-}
-
 body {
   background: #ffffff;
   color: #171717;

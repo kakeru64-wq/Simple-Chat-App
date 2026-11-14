@@ -69,7 +69,7 @@ export function RoomNameEditor({ name, onRename }: Props) {
         type="submit"
         variant="primary"
         disabled={isPending || !draft.trim()}
-        className="rounded px-2 py-1 text-xs"
+        className="shrink-0 rounded px-2 py-1 text-xs"
       >
         保存
       </Button>

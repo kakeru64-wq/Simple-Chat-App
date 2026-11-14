@@ -72,7 +72,7 @@ export function ChatView({ room, onRoomChange }: Props) {
       />
 
       {chat.isLoading ? (
-        <div className="flex flex-1 items-center justify-center bg-chat text-sm text-white">
+        <div className="flex flex-1 items-center justify-center bg-[#8CABD9] text-sm text-white">
           読み込み中...
         </div>
       ) : (
