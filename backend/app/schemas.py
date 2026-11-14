@@ -84,6 +84,19 @@ class RoomCreate(BaseModel):
     name: RoomName
 
 
+class RoomUpdate(BaseModel):
+    name: RoomName
+
+
+class RoomRef(BaseModel):
+    """全参加者に共通のルーム情報（ユーザーごとの未読数などを含まない）。配信用。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+
+
 class RoomOut(BaseModel):
     """ルーム情報に、閲覧ユーザーから見た状態（参加・未読・最新メッセージ）を加えたもの。"""
 
@@ -104,3 +117,8 @@ class MarkReadRequest(BaseModel):
 class MessageEvent(BaseModel):
     type: Literal["message.created", "message.deleted"]
     message: MessageOut
+
+
+class RoomUpdatedEvent(BaseModel):
+    type: Literal["room.updated"] = "room.updated"
+    room: RoomRef

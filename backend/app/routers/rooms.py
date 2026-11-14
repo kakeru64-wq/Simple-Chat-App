@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, BackgroundTasks, Query, status
 
 from app import schemas
 from app.deps import CurrentUser, DbSession
+from app.realtime import manager
 from app.services import memberships as membership_service
 from app.services import rooms as room_service
 
@@ -32,6 +33,22 @@ def create_room(body: schemas.RoomCreate, db: DbSession, user: CurrentUser):
 
 @router.get("/{room_id}", response_model=schemas.RoomOut)
 def get_room(room_id: int, db: DbSession, user: CurrentUser):
+    return room_service.get_room_view(db, room_id, user)
+
+
+@router.patch("/{room_id}", response_model=schemas.RoomOut)
+def rename_room(
+    room_id: int,
+    body: schemas.RoomUpdate,
+    db: DbSession,
+    user: CurrentUser,
+    background_tasks: BackgroundTasks,
+):
+    """ルーム名を変更する（参加者のみ。同名のルームがあれば 409）。参加者全員へ配信する。"""
+    room = room_service.rename_room(db, room_id, user, body.name)
+    event = schemas.RoomUpdatedEvent(room=schemas.RoomRef.model_validate(room))
+    member_ids = membership_service.list_member_ids(db, room_id)
+    background_tasks.add_task(manager.send_to_users, member_ids, event.model_dump(mode="json"))
     return room_service.get_room_view(db, room_id, user)
 
 

@@ -13,7 +13,7 @@ export class ApiError extends Error {
 }
 
 type RequestOptions = {
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** JSON にシリアライズするオブジェクト、または multipart 用の FormData */
   body?: unknown;
   /** false の場合は Authorization ヘッダーを付けない（ログイン時） */
@@ -91,6 +91,8 @@ export const api = {
     request<Room[]>(query ? `/api/rooms?${new URLSearchParams({ q: query })}` : "/api/rooms"),
   getRoom: (roomId: number) => request<Room>(`/api/rooms/${roomId}`),
   createRoom: (name: string) => request<Room>("/api/rooms", { method: "POST", body: { name } }),
+  renameRoom: (roomId: number, name: string) =>
+    request<Room>(`/api/rooms/${roomId}`, { method: "PATCH", body: { name } }),
   joinRoom: (roomId: number) => request<Room>(`/api/rooms/${roomId}/members/me`, { method: "PUT" }),
   leaveRoom: (roomId: number) =>
     request<void>(`/api/rooms/${roomId}/members/me`, { method: "DELETE" }),

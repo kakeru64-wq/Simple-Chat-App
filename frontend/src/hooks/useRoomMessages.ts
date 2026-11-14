@@ -57,7 +57,12 @@ export function useRoomMessages(roomId: number) {
         .catch(() => {});
       return;
     }
-    if (event.message.room_id === roomId) applyIncoming([event.message]);
+    if (
+      (event.type === "message.created" || event.type === "message.deleted") &&
+      event.message.room_id === roomId
+    ) {
+      applyIncoming([event.message]);
+    }
   });
 
   // 既読位置の更新

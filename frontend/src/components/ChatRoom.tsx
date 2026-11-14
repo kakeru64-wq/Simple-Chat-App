@@ -8,7 +8,12 @@ import { AppHeader, headerButtonClass } from "@/components/AppHeader";
 import { useAuthedSession } from "@/components/AuthenticatedShell";
 import { MessageInput } from "@/components/MessageInput";
 import { MessageList } from "@/components/MessageList";
-import { type ConnectionStatus, useConnectionStatus } from "@/components/RealtimeProvider";
+import {
+  type ConnectionStatus,
+  useConnectionStatus,
+  useRealtimeEvent,
+} from "@/components/RealtimeProvider";
+import { RoomNameEditor } from "@/components/RoomNameEditor";
 import { useRoomMessages } from "@/hooks/useRoomMessages";
 import { ApiError, api } from "@/lib/api";
 import type { Message, Room } from "@/lib/types";
@@ -42,6 +47,16 @@ export function ChatRoom({ roomId }: { roomId: number }) {
     };
   }, [roomId]);
 
+  // 他の参加者による名前変更を反映する
+  useRealtimeEvent((event) => {
+    if (event.type !== "room.updated" || event.room.id !== roomId) return;
+    setState((prev) =>
+      prev.kind === "ready" ? { kind: "ready", room: { ...prev.room, ...event.room } } : prev,
+    );
+  });
+
+  const updateRoom = (room: Room) => setState({ kind: "ready", room });
+
   switch (state.kind) {
     case "loading":
       return <CenteredScreen title="…">読み込み中...</CenteredScreen>;
@@ -61,15 +76,15 @@ export function ChatRoom({ roomId }: { roomId: number }) {
       );
     case "ready":
       return state.room.is_member ? (
-        <ChatRoomBody room={state.room} />
+        <ChatRoomBody room={state.room} onRoomChange={updateRoom} />
       ) : (
-        <JoinPrompt room={state.room} onJoined={(room) => setState({ kind: "ready", room })} />
+        <JoinPrompt room={state.room} onJoined={updateRoom} />
       );
   }
 }
 
 /** 参加中のルーム：メッセージ一覧と送信フォーム */
-function ChatRoomBody({ room }: { room: Room }) {
+function ChatRoomBody({ room, onRoomChange }: { room: Room; onRoomChange: (room: Room) => void }) {
   const session = useAuthedSession();
   const router = useRouter();
   const connection = useConnectionStatus();
@@ -115,6 +130,10 @@ function ChatRoomBody({ room }: { room: Room }) {
     }
   };
 
+  const handleRename = async (name: string) => {
+    onRoomChange(await api.renameRoom(room.id, name)); // 失敗時の表示は RoomNameEditor が行う
+  };
+
   const displayError = actionError ?? error;
 
   return (
@@ -123,7 +142,7 @@ function ChatRoomBody({ room }: { room: Room }) {
         backHref="/rooms"
         title={
           <span className="flex items-center gap-2">
-            <span className="truncate">{room.name}</span>
+            <RoomNameEditor name={room.name} onRename={handleRename} />
             <span className="shrink-0 text-xs font-normal text-white/70">
               ({room.member_count})
             </span>

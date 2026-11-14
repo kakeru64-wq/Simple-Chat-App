@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.errors import ConflictError, NotFoundError
+from app.errors import ConflictError, ForbiddenError, NotFoundError
 
 
 def get_room(db: Session, room_id: int) -> models.Room:
@@ -33,6 +33,25 @@ def create_room(db: Session, name: str, creator: models.User | None = None) -> m
             db.add(models.RoomMember(room_id=room.id, user_id=creator.id))
         db.commit()
     except IntegrityError as e:  # 事前チェック後に同名ルームが同時作成された場合
+        db.rollback()
+        raise ConflictError(f"Room '{name}' already exists") from e
+    return room
+
+
+def rename_room(db: Session, room_id: int, user: models.User, name: str) -> models.Room:
+    """ルーム名を変更する。参加者なら誰でも変更できる（LINE のグループと同じ）。"""
+    room = get_room(db, room_id)
+    if db.get(models.RoomMember, (room_id, user.id)) is None:
+        raise ForbiddenError("You are not a member of this room")
+    if room.name == name:
+        return room
+    existing = find_room_by_name(db, name)
+    if existing is not None:
+        raise ConflictError(f"Room '{name}' already exists")
+    room.name = name
+    try:
+        db.commit()
+    except IntegrityError as e:  # 事前チェック後に同名ルームが同時に作られた場合
         db.rollback()
         raise ConflictError(f"Room '{name}' already exists") from e
     return room

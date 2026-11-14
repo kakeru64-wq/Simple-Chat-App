@@ -40,10 +40,18 @@ export type MessageListResponse = {
 };
 
 /** WebSocket で受信するイベント */
-export type ServerEvent = {
+export type ChatMessageEvent = {
   type: "message.created" | "message.deleted";
   message: Message;
 };
+
+/** ルーム情報の変更（名前変更など）。全参加者に共通の情報のみ含む */
+export type RoomUpdatedEvent = {
+  type: "room.updated";
+  room: Pick<Room, "id" | "name">;
+};
+
+export type ServerEvent = ChatMessageEvent | RoomUpdatedEvent;
 
 /** クライアント側で発行するイベント（接続・再接続時。取りこぼしの補完に使う） */
 export type ConnectionOpenedEvent = { type: "connection.opened" };

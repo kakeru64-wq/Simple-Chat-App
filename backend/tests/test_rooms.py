@@ -45,3 +45,34 @@ def test_last_message_skips_deleted(client, alice, room_id):
     latest = post(client, alice, room_id, "remove")
     client.delete(f"/api/rooms/{room_id}/messages/{latest['id']}", headers=alice)
     assert _room(client, alice, room_id)["last_message"]["content"] == "keep"
+
+
+# ---- ルーム名の変更 ----
+def test_member_can_rename_room(client, alice, bob, room_id):
+    res = client.patch(f"/api/rooms/{room_id}", json={"name": "  新しい名前 "}, headers=bob)
+    assert res.status_code == 200
+    assert res.json()["name"] == "新しい名前"
+    assert _room(client, alice, room_id)["name"] == "新しい名前"
+
+
+def test_non_member_cannot_rename_room(client, alice, bob):
+    room = create_room(client, alice, "club")
+    assert client.patch(f"/api/rooms/{room}", json={"name": "x"}, headers=bob).status_code == 403
+
+
+def test_rename_to_existing_name_conflicts(client, alice, room_id):
+    create_room(client, alice, "taken")
+    res = client.patch(f"/api/rooms/{room_id}", json={"name": "taken"}, headers=alice)
+    assert res.status_code == 409
+
+
+def test_rename_to_same_name_is_ok(client, alice, room_id):
+    res = client.patch(f"/api/rooms/{room_id}", json={"name": "lobby"}, headers=alice)
+    assert res.status_code == 200
+
+
+def test_rename_validation_and_not_found(client, alice, room_id):
+    url = f"/api/rooms/{room_id}"
+    assert client.patch(url, json={"name": "  "}, headers=alice).status_code == 422
+    assert client.patch(url, json={"name": "a" * 31}, headers=alice).status_code == 422
+    assert client.patch("/api/rooms/9999", json={"name": "x"}, headers=alice).status_code == 404
